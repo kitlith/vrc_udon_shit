@@ -1,0 +1,79 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net472</TargetFramework>
+    <LangVersion>8.0</LangVersion>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <VRChatPath>/home/kitlith/.steam/steam/steamapps/common/VRChat</VRChatPath>
+
+    <Authors>Kitlith</Authors>
+    <Version>0.0.1</Version>
+    <AssemblyVersion>0.0.1.0</AssemblyVersion>
+    <FileVersion>0.0.1.0</FileVersion>
+
+    <AssemblySearchPaths>$(AssemblySearchPaths);$(VRChatPath)\MelonLoader\Managed</AssemblySearchPaths>
+
+    <DefaultItemExcludes>$(DefaultItemExcludes);UdonSharp_Tests/**</DefaultItemExcludes>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- <ProjectReference Include="../UdonUtils/UdonUtils.csproj"/> -->
+
+    <Reference Include="MelonLoader">
+      <HintPath>$(VRChatPath)/MelonLoader/MelonLoader.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+
+    <Reference Include="Assembly-CSharp">
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="VRC.Udon.Common">
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="VRC.Udon.VM">
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="VRC.Udon">
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Il2Cppmscorlib">
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Il2CppSystem.Memory">
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Il2CppSystem.Core">
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="UnhollowerBaseLib">
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="UnityEngine.CoreModule">
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="VRCSDK3">
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="VRCSDKBase">
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Unity.TextMeshPro">
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Newtonsoft.Json">
+      <Private>False</Private>
+    </Reference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- <PackageReference Include="ILRepack.Lib.MSBuild.Task" Version="2.0.18.2" />
+    <PackageReference Include="MiniProfiler" Version="4.2.22" /> -->
+    <!-- <PackageReference Include="System.Memory" Version="4.5.4" /> -->
+  </ItemGroup>
+
+  <Target Name="CopyMod" AfterTargets="Build">
+    <Message Text="vrc_udon_shit -&gt; $(VRChatPath)\Mods" Importance="High" />
+    <Copy SourceFiles="$(TargetDir)vrc_udon_shit.dll;$(TargetDir)vrc_udon_shit.pdb" DestinationFolder="$(VRChatPath)\Mods" />
+  </Target>
+
+</Project>
