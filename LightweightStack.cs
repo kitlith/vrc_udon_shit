@@ -5,11 +5,13 @@ using UnhollowerBaseLib;
 using System.Reflection;
 
 namespace vrc_udon_shit {
-    internal class LightweightStack<T> where T: unmanaged {
+    internal class LightweightStack<T> {
         private T[] contents;
         private GCHandle contentsPin;
-        internal Il2CppSystem.Span<T> contentsSpan;
+        private Il2CppSystem.Span<T> contentsSpan;
         //private UnhollowerBaseLib.Il2CppArrayBase<T> contents;
+
+        internal System.IntPtr Pointer;
 
         private static uint _byteOffset_SpanOffset = GetFieldOffset("_byteOffset");
         private static uint _length_SpanOffset = GetFieldOffset("_length");
@@ -26,6 +28,8 @@ namespace vrc_udon_shit {
 
             contentsSpan = new Il2CppSystem.Span<T>();
             contentsSpan._pinnable = null;
+
+            Pointer = UnhollowerBaseLib.IL2CPP.il2cpp_object_unbox(UnhollowerBaseLib.IL2CPP.Il2CppObjectBaseToPtrNotNull(contentsSpan));
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -63,9 +67,10 @@ namespace vrc_udon_shit {
             return ret;
         }
 
-        // TODO: work on this interface, since we're now doing extremely stateful things with this class.
+        // NOTE: This modifies the slice pointed to by Pointer instead of returning anything.
+        // Pushing items will destroy what was previously there!
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public unsafe Il2CppSystem.Span<T> PeekSlice(int items) {
+        public unsafe void PopSlice(int items) {
             if (count < items) {
                 throw new System.Exception("Attempted to peek more items than present!");
             }
@@ -76,17 +81,9 @@ namespace vrc_udon_shit {
 
             //contentsSpan._length = items;
             //contentsSpan._byteOffset = contentsPin.AddrOfPinnedObject().Add<T>(count - items);
-            return contentsSpan;
-        }
-        
-        // TODO: work on this interface, since we're now doing extremely stateful things with this class.
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void PopSlice(int items) {
-            if (count < items) {
-                throw new System.Exception("Attempted to pop more items than present!");
-            }
 
             count -= items;
+            // we never shrink our stack, so those items will never be unavailable, at least until we push again.
         }
 
         private static uint GetFieldOffset(string field) {

@@ -1,5 +1,6 @@
 bin/**
 obj/**
+*.xsd
 
 # Relic of when i was messing with UdonUtils, not quite willing to remove it yet
 UdonSharp_Tests/

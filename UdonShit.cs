@@ -1,14 +1,11 @@
 ﻿using System;
 using System.Diagnostics;
 using MelonLoader;
-//using UdonSharp.Tests;
 
-//using StackExchange.Profiling;
 using HarmonyLib;
 
 using VRC.Udon.Common.Interfaces;
 
-//using static FakeUdon.FakeUdonRegistry;
 using static UnhollowerRuntimeLib.ClassInjector;
 
 [assembly: MelonInfo(typeof(vrc_udon_shit.UdonShit), "Udon Shit", "0.0.1", "Kitlith")]

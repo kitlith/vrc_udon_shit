@@ -17,8 +17,6 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- <ProjectReference Include="../UdonUtils/UdonUtils.csproj"/> -->
-
     <Reference Include="MelonLoader">
       <HintPath>$(VRChatPath)/MelonLoader/MelonLoader.dll</HintPath>
       <Private>False</Private>
@@ -66,9 +64,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- <PackageReference Include="ILRepack.Lib.MSBuild.Task" Version="2.0.18.2" />
-    <PackageReference Include="MiniProfiler" Version="4.2.22" /> -->
-    <!-- <PackageReference Include="System.Memory" Version="4.5.4" /> -->
+    <PackageReference Include="Fody" Version="6.6.0" PrivateAssets="all" />
+    <PackageReference Include="InlineIL.Fody" Version="1.7.1" PrivateAssets="all" />
   </ItemGroup>
 
   <Target Name="CopyMod" AfterTargets="Build">
