@@ -1,0 +1,9 @@
+mod il2cpp_array;
+mod il2cpp_object;
+mod il2cpp_method;
+mod il2cpp_string;
+mod delegate;
+mod strongbox;
+mod span;
+mod udon_types;
+mod interpreter;

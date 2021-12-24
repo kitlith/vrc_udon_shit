@@ -4,7 +4,7 @@
     <TargetFramework>net472</TargetFramework>
     <LangVersion>8.0</LangVersion>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <VRChatPath>/home/kitlith/.steam/steam/steamapps/common/VRChat</VRChatPath>
+    <VRChatPath>C:\Program Files (x86)\Steam\steamapps\common\VRChat</VRChatPath>
 
     <Authors>Kitlith</Authors>
     <Version>0.0.1</Version>
@@ -15,6 +15,17 @@
 
     <DefaultItemExcludes>$(DefaultItemExcludes);UdonSharp_Tests/**</DefaultItemExcludes>
   </PropertyGroup>
+
+  <Target Name="Cargo build native library" BeforeTargets="PrepareForBuild">
+      <Exec Command="cargo build --release --manifest-path native/Cargo.toml"/>
+  </Target>
+
+  <ItemGroup>
+    <None Remove="native.dll" />
+    <EmbeddedResource Include="native/target/release/native.dll">
+      <LogicalName>native.dll</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
 
   <ItemGroup>
     <Reference Include="MelonLoader">
@@ -29,6 +40,9 @@
       <Private>False</Private>
     </Reference>
     <Reference Include="VRC.Udon.VM">
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="VRC.Udon.Wrapper.dll">
       <Private>False</Private>
     </Reference>
     <Reference Include="VRC.Udon">
@@ -61,11 +75,6 @@
     <Reference Include="Newtonsoft.Json">
       <Private>False</Private>
     </Reference>
-  </ItemGroup>
-
-  <ItemGroup>
-    <PackageReference Include="Fody" Version="6.6.0" PrivateAssets="all" />
-    <PackageReference Include="InlineIL.Fody" Version="1.7.1" PrivateAssets="all" />
   </ItemGroup>
 
   <Target Name="CopyMod" AfterTargets="Build">
