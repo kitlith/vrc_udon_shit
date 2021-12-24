@@ -59,7 +59,7 @@ namespace vrc_udon_shit {
         internal delegate T CastDelegate<T>(Il2CppObjectBase obj);
         private static MethodInfo CastMethod;
         private static MethodInfo UnboxMethod;
-        internal sealed class DelegateStore<T> {
+        private sealed class DelegateStore<T> {
             internal static CastDelegate<T> Cast; 
 
             static DelegateStore() {

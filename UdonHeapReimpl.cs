@@ -19,7 +19,7 @@ namespace vrc_udon_shit {
             heap = new IExStrongBox[Math.Min(capacity, MAXIMUM_CAPACITY)];
         }
 
-        //private static System.Reflection.MethodInfo CastMethod = typeof(UnhollowerBaseLib.Il2CppObjectBase).GetMethod(nameof(UnhollowerBaseLib.Il2CppObjectBase.Cast));
+        private static System.Reflection.MethodInfo CastMethod = typeof(UnhollowerBaseLib.Il2CppObjectBase).GetMethod(nameof(UnhollowerBaseLib.Il2CppObjectBase.Cast));
         private static System.Reflection.MethodInfo UnboxMethod = typeof(UnhollowerBaseLib.Il2CppObjectBase).GetMethod(nameof(UnhollowerBaseLib.Il2CppObjectBase.Unbox));
 
         public UdonHeapReimpl(VRC.Udon.Common.UdonHeap orig): base(ClassInjector.DerivedConstructorPointer<UdonHeapReimpl>()) {
@@ -38,8 +38,14 @@ namespace vrc_udon_shit {
                 var managedBoxType = typeof(ExStrongBox<>).MakeGenericType(managedType);
                 var managedBox = Activator.CreateInstance(managedBoxType) as IExStrongBox;
 
+                if (nativeBox.Value is null) {
+                    continue;
+                }
+
+                // so that the NativeClassPtr gets set, so that unbox won't complain.
+                System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(managedType.TypeHandle);
+
                 UdonShit.logger.Msg(managedType.FullName);
-                UdonShit.logger.Msg(managedType.IsValueType);
 
                 if (managedType.IsValueType) {
                     // FUCK: but at least it's not a hot path.
@@ -47,7 +53,7 @@ namespace vrc_udon_shit {
                 } else if (managedType == typeof(string)) {
                     managedBox.Value = UnhollowerBaseLib.IL2CPP.Il2CppStringToManaged(nativeBox.Value.Pointer);
                 } else {
-                    managedBox.Value = nativeBox.Value;
+                    managedBox.Value = CastMethod.MakeGenericMethod(managedType).Invoke(nativeBox.Value, null);
                 }
             }
         }
@@ -251,10 +257,17 @@ namespace vrc_udon_shit {
 
         private static Type SystemTypeHelper(Il2CppSystem.Type type) {
             var fullName = type.FullName;
-            if (type.IsValueType) {
+            if (type.IsPrimitive) {
                 return Type.GetType(fullName);
             } else if (type.IsArray) {
-                return typeof(UnhollowerBaseLib.Il2CppArrayBase<>).MakeGenericType(type.GetElementType().SystemType());
+                var elementType = type.GetElementType().SystemType();
+                if (elementType.IsValueType) {
+                    return typeof(UnhollowerBaseLib.Il2CppStructArray<>).MakeGenericType(elementType);
+                } else if (elementType == typeof(string)) {
+                    return typeof(UnhollowerBaseLib.Il2CppStringArray);
+                } else {
+                    return typeof(UnhollowerBaseLib.Il2CppReferenceArray<>).MakeGenericType(elementType);
+                }
             }
             if (fullName == "System.String") {
                 return typeof(string);
@@ -264,7 +277,7 @@ namespace vrc_udon_shit {
             }
             return AppDomain.CurrentDomain.GetAssemblies()
                 .SelectMany(a => a.GetTypes())
-                .First(t => t.FullName == fullName);;
+                .First(t => t.FullName == fullName);
         }
     }
 }

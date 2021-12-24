@@ -26,6 +26,13 @@ namespace vrc_udon_shit
                 LoggerInstance.Msg("Using High Resolution Stopwatch! :)");
             }
 
+            logger.Msg($"GetIl2CppClass: {UnhollowerBaseLib.IL2CPP.GetIl2CppClass("UnityEngine.CoreModule.dll", "UnityEngine", "Vector3")}");
+            logger.Msg($"ClassPointerStore: {UnhollowerBaseLib.Il2CppClassPointerStore<UnityEngine.Vector3>.NativeClassPtr}");
+            logger.Msg($"CreatedTypeRedirect: {UnhollowerBaseLib.Il2CppClassPointerStore<UnityEngine.Vector3>.CreatedTypeRedirect}");
+            System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(typeof(UnityEngine.Vector3).TypeHandle);
+            logger.Msg($"ClassPointerStore: {UnhollowerBaseLib.Il2CppClassPointerStore<UnityEngine.Vector3>.NativeClassPtr}");
+            logger.Msg($"CreatedTypeRedirect: {UnhollowerBaseLib.Il2CppClassPointerStore<UnityEngine.Vector3>.CreatedTypeRedirect}");
+
             // HarmonyInstance.Patch(
             //     typeof(VRC.Udon.Common.Factories.UdonHeapFactory)
             //         .GetMethod(nameof(VRC.Udon.Common.Factories.UdonHeapFactory.ConstructUdonHeap), new Type[] {typeof(uint)}),
