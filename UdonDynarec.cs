@@ -33,7 +33,7 @@ namespace vrc_udon_shit {
                 return false;
             }
             _program = program;
-            heap = new UdonHeapWrapper(program.Heap);
+            heap = new UdonHeapReimpl(program.Heap.Cast<VRC.Udon.Common.UdonHeap>()); //new UdonHeapWrapper(program.Heap);
 
             bytecode = new uint[_program.ByteCode.Length / 4];
 
@@ -76,7 +76,7 @@ namespace vrc_udon_shit {
 
         private uint[] bytecode;
 
-        private UdonHeapWrapper heap;
+        private UdonHeapReimpl heap;
         //private IUdonHeap heap { get => _program.Heap; }
         private IUdonWrapper _wrapper;
         private VRC.Udon.VM.IUdonVMTimeSource _timeSource;
@@ -98,16 +98,16 @@ namespace vrc_udon_shit {
             if (_halted) {
                 return VRC.Udon.VM.UdonVM.RESULT_FAILURE;
             }
-            // pushTime.Reset();
-            // popTime.Reset();
-            // jumpIfFalseTime.Reset();
-            // jumpTime.Reset();
-            // externFetchTime.Reset();
-            // externArgsTime.Reset();
+            pushTime.Reset();
+            popTime.Reset();
+            jumpIfFalseTime.Reset();
+            jumpTime.Reset();
+            externFetchTime.Reset();
+            externArgsTime.Reset();
             externTime.Reset();
-            // jumpIndirectTime.Reset();
-            // copyTime.Reset();
-            // decodeTime.Reset();
+            jumpIndirectTime.Reset();
+            copyTime.Reset();
+            decodeTime.Reset();
             startTime = _timeSource.CurrentTime;
             try {
                 while (pc / 4 < bytecode.Length) {
@@ -130,10 +130,10 @@ namespace vrc_udon_shit {
             var duration = _timeSource.CurrentTime - startTime;
             if (duration > MAX_VM_TIME_MS/10) {
                 UdonShit.logger.Msg($"{_name} took a long time ({duration/1000.0f} seconds). Details:");
-            //     UdonShit.logger.Msg($"push: {pushTime.Elapsed.TotalSeconds}, pop: {popTime.Elapsed.TotalSeconds}, copy: {copyTime.Elapsed.TotalSeconds}");
-            //     UdonShit.logger.Msg($"jumpIfFalse: {jumpIfFalseTime.Elapsed.TotalSeconds}, jump: {jumpTime.Elapsed.TotalSeconds}, jumpIndirect: {jumpIndirectTime.Elapsed.TotalSeconds}");
-            //     UdonShit.logger.Msg($"externFetch: {externFetchTime.Elapsed.TotalSeconds}, externArgs: {externArgsTime.Elapsed.TotalSeconds}, externCall: {externTime.Elapsed.TotalSeconds}, decode: {decodeTime.Elapsed.TotalSeconds}");
-                UdonShit.logger.Msg($"externCall: {externTime.Elapsed.TotalSeconds}");
+                UdonShit.logger.Msg($"push: {pushTime.Elapsed.TotalSeconds}, pop: {popTime.Elapsed.TotalSeconds}, copy: {copyTime.Elapsed.TotalSeconds}");
+                UdonShit.logger.Msg($"jumpIfFalse: {jumpIfFalseTime.Elapsed.TotalSeconds}, jump: {jumpTime.Elapsed.TotalSeconds}, jumpIndirect: {jumpIndirectTime.Elapsed.TotalSeconds}");
+                UdonShit.logger.Msg($"externFetch: {externFetchTime.Elapsed.TotalSeconds}, externArgs: {externArgsTime.Elapsed.TotalSeconds}, externCall: {externTime.Elapsed.TotalSeconds}, decode: {decodeTime.Elapsed.TotalSeconds}");
+                // UdonShit.logger.Msg($"externCall: {externTime.Elapsed.TotalSeconds}");
             }
 
             return VRC.Udon.VM.UdonVM.RESULT_SUCCESS;
@@ -155,23 +155,23 @@ namespace vrc_udon_shit {
             // }
         }
 
-        // Stopwatch pushTime = new Stopwatch();
-        // Stopwatch popTime = new Stopwatch();
-        // Stopwatch jumpIfFalseTime = new Stopwatch();
-        // Stopwatch jumpTime = new Stopwatch();
-        // Stopwatch externFetchTime = new Stopwatch();
-        // Stopwatch externArgsTime = new Stopwatch();
+        Stopwatch pushTime = new Stopwatch();
+        Stopwatch popTime = new Stopwatch();
+        Stopwatch jumpIfFalseTime = new Stopwatch();
+        Stopwatch jumpTime = new Stopwatch();
+        Stopwatch externFetchTime = new Stopwatch();
+        Stopwatch externArgsTime = new Stopwatch();
         Stopwatch externTime = new Stopwatch();
-        // Stopwatch jumpIndirectTime = new Stopwatch();
-        // Stopwatch copyTime = new Stopwatch();
-        // Stopwatch decodeTime = new Stopwatch();
+        Stopwatch jumpIndirectTime = new Stopwatch();
+        Stopwatch copyTime = new Stopwatch();
+        Stopwatch decodeTime = new Stopwatch();
 
         // Trampolines on (indirect) branch -- goal of the dynarec is to generate functions that trampoline flow control.
         // At least that was the goal, but I took that out as soon as I realized it was performing slowly, so this just returns when it's done interpreting.
         private unsafe uint InterpretBlock(uint pc, LightweightStack<uint> stack) {
             // TODO? allocate as part of the VM and pin it -- this can last as long as the heap + stack exists.
             IntPtr* ptr = stackalloc System.IntPtr[2];
-            ptr[0] = heap.Pointer;
+            ptr[0] = UnhollowerBaseLib.IL2CPP.Il2CppObjectBaseToPtrNotNull(heap);
             ptr[1] = stack.Pointer;
             void** externArgs = (void**)ptr;
     
@@ -179,26 +179,26 @@ namespace vrc_udon_shit {
                 if ((pc & 3) != 0) {
                     throw new Exception($"Unaligned PC 0x{pc:X}!");
                 }
-                // decodeTime.Start();
+                decodeTime.Start();
                 uint op = ReadBE(ref pc);
-                // decodeTime.Stop();
+                decodeTime.Stop();
 
                 var instTime = _timeSource.CurrentTime;
                 switch (op) {
                     case (uint)OpCode.NOP:
                         break;
                     case (uint)OpCode.PUSH:
-                        // pushTime.Start();
+                        pushTime.Start();
                         stack.Push(ReadBE(ref pc));
-                        // pushTime.Stop();
+                        pushTime.Stop();
                         break;
                     case (uint)OpCode.POP:
-                        // popTime.Start();
+                        popTime.Start();
                         stack.Pop();
-                        // popTime.Stop();
+                        popTime.Stop();
                         break;
                     case (uint)OpCode.JUMP_IF_FALSE:
-                        // jumpIfFalseTime.Start();
+                        jumpIfFalseTime.Start();
                         CheckTimeLimit();
                         var jump_target = ReadBE(ref pc);
                         var cond_slot = stack.Pop();
@@ -208,30 +208,31 @@ namespace vrc_udon_shit {
                             //pc = CheckProgramCounter(jump_target);
                             pc = jump_target;
                         }
-                        // jumpIfFalseTime.Stop();
+                        jumpIfFalseTime.Stop();
                         break;
                     case (uint)OpCode.JUMP:
-                        // jumpTime.Start();
+                        jumpTime.Start();
                         CheckTimeLimit();
                         //return ReadBE(ref pc);
                         //pc = CheckProgramCounter(ReadBE(ref pc));
                         pc = ReadBE(ref pc);
-                        // jumpTime.Stop();
+                        jumpTime.Stop();
                         break;
                     case (uint)OpCode.EXTERN:
-                        // externFetchTime.Start();
+                        externFetchTime.Start();
                         CheckTimeLimit();
                         var function_slot = ReadBE(ref pc);
 
                         CachedUdonExternDelegate externDelegate;
                         if (!ExternCache.TryGetValue(function_slot, out externDelegate)) {
+                            // TODO: use generic
                             var obj_type = heap.GetHeapVariableType(function_slot);
 
                             if (obj_type != UnhollowerRuntimeLib.Il2CppType.Of<string>()) {
                                 throw new Exception($"Extern operand expected type 'System.String' but got '{obj_type.FullName}' instead.");
                             }
 
-                            var function_signature = UnhollowerBaseLib.IL2CPP.Il2CppStringToManaged(heap.GetHeapVariable(function_slot).Pointer);
+                            var function_signature = UnhollowerBaseLib.IL2CPP.Il2CppStringToManaged((heap.GetHeapVariable(function_slot) as Il2CppSystem.Object).Pointer);
 
                             var del = _wrapper.GetExternFunctionDelegate(function_signature);
                             var param_count = _wrapper.GetExternFunctionParameterCount(function_signature);
@@ -239,12 +240,12 @@ namespace vrc_udon_shit {
                             externDelegate = new CachedUdonExternDelegate(function_signature, del, param_count);
                             ExternCache.Add(function_slot, externDelegate);
                         }
-                        // externFetchTime.Stop();
+                        externFetchTime.Stop();
 
-                        // externArgsTime.Start();
+                        externArgsTime.Start();
                         // NOTE: Invoke relies on the side-effect of PopSlice that sets up the slice referenced in externArgs
                         stack.PopSlice(externDelegate.parameterCount);
-                        //externArgsTime.Stop();
+                        externArgsTime.Stop();
 
                         externTime.Start();
                         externDelegate.Invoke(externArgs);
@@ -256,7 +257,7 @@ namespace vrc_udon_shit {
                         pc += 4; // skip the annotation, we're an extended nop
                         break;
                     case (uint)OpCode.JUMP_INDIRECT:
-                        // jumpIndirectTime.Start();
+                        jumpIndirectTime.Start();
                         CheckTimeLimit();
                         var destination_slot = ReadBE(ref pc);
                         // getting object and then unboxing is apparently faster than the generic version??
@@ -264,14 +265,14 @@ namespace vrc_udon_shit {
                         //return destination;
                         //pc = CheckProgramCounter(destination);
                         pc = destination;
-                        // jumpIndirectTime.Stop();
+                        jumpIndirectTime.Stop();
                         break;
                     case (uint)OpCode.COPY:
-                        // copyTime.Start();
+                        copyTime.Start();
                         var dest = stack.Pop();
                         var src = stack.Pop();
                         heap.CopyHeapVariable(src, dest);
-                        // copyTime.Stop();
+                        copyTime.Stop();
                         break;
                 }
             }

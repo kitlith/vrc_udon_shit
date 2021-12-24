@@ -14,38 +14,66 @@ using static UnhollowerRuntimeLib.ClassInjector;
 namespace vrc_udon_shit
 {
     public class UdonShit: MelonMod {
-
         public static MelonLogger.Instance logger;
+
+        public readonly static Il2CppSystem.Collections.Generic.List<Il2CppSystem.Object> Objects = new Il2CppSystem.Collections.Generic.List<Il2CppSystem.Object>();
 
         public override void OnApplicationStart() {
             logger = LoggerInstance;
             RegisterTypeInIl2CppWithInterfaces<UdonVMDynarec>(true, typeof(IUdonVM));
+            RegisterTypeInIl2CppWithInterfaces<UdonHeapReimpl>(true, typeof(IUdonHeap));
             if (Stopwatch.IsHighResolution) {
                 LoggerInstance.Msg("Using High Resolution Stopwatch! :)");
             }
+
+            // HarmonyInstance.Patch(
+            //     typeof(VRC.Udon.Common.Factories.UdonHeapFactory)
+            //         .GetMethod(nameof(VRC.Udon.Common.Factories.UdonHeapFactory.ConstructUdonHeap), new Type[] {typeof(uint)}),
+            //     prefix: new HarmonyMethod(typeof(UdonShit).GetMethod(nameof(UdonShit.PatchConstructUdonHeapSize)))
+            // );
+            
+            // HarmonyInstance.Patch(
+            //     typeof(VRC.Udon.Common.Factories.UdonHeapFactory)
+            //         .GetMethod(nameof(VRC.Udon.Common.Factories.UdonHeapFactory.ConstructUdonHeap), new Type[0]),
+            //     prefix: new HarmonyMethod(typeof(UdonShit).GetMethod(nameof(UdonShit.PatchConstructUdonHeap)))
+            // );
         }
+
+        // public static bool PatchConstructUdonHeapSize(uint heapSize, ref IUdonHeap __result) {
+        //     UdonShit.logger.Msg("Log uint heap construction!");
+        //     var heap = new UdonHeapReimpl(heapSize);
+        //     Objects.Add(heap);
+        //     __result = new IUdonHeap(heap.Pointer);
+        //     return false; // we're completely overriding the method, sorry.
+        // }
+
+        // public static bool PatchConstructUdonHeap(ref IUdonHeap __result) {
+        //     UdonShit.logger.Msg("Log default heap construction!");
+        //     var heap = new UdonHeapReimpl();
+        //     Objects.Add(heap);
+        //     __result = new IUdonHeap(heap.Pointer);
+        //     return false; // we're completely overriding the method, sorry.
+        // }
 
         public override void OnSceneWasUnloaded(int buildIndex, string sceneName) {
             if (buildIndex == -1) {
-                UdonVMFactoryPatch.Objects.Clear();
+                Objects.Clear();
                 LoggerInstance.Msg("Clearing VM Objects.");
             }
         }
     }
 
-    [HarmonyPatch(typeof(VRC.Udon.VM.UdonVMFactory), "ConstructUdonVM")]
+    [HarmonyPatch(typeof(VRC.Udon.VM.UdonVMFactory), nameof(VRC.Udon.VM.UdonVMFactory.ConstructUdonVM))]
     class UdonVMFactoryPatch {
         static bool Prefix(VRC.Udon.VM.UdonVMFactory __instance, ref IUdonVM __result) {
             var dynarec = new UdonVMDynarec(__instance._wrapperFactory.GetWrapper(), __instance._udonVMTimeSource);
-            Objects.Add(dynarec);
+            UdonShit.Objects.Add(dynarec);
             __result = new IUdonVM(dynarec.Pointer);
             return false; // we're completely overriding the method, sorry.
         }
-
-        internal readonly static Il2CppSystem.Collections.Generic.List<Il2CppSystem.Object> Objects = new Il2CppSystem.Collections.Generic.List<Il2CppSystem.Object>();
     }
 
-    [HarmonyPatch(typeof(VRC.Udon.UdonBehaviour), "ProcessEntryPoints")]
+    [HarmonyPatch(typeof(VRC.Udon.UdonBehaviour), nameof(VRC.Udon.UdonBehaviour.ProcessEntryPoints))]
     class UdonBehaviourPassNamePatch {
         static void Prefix(VRC.Udon.UdonBehaviour __instance) {
             var dynarec = __instance._udonVM.TryCast<UdonVMDynarec>();
@@ -53,7 +81,7 @@ namespace vrc_udon_shit
         }
     }
 
-    [HarmonyPatch(typeof(VRC.Udon.UdonBehaviour), "RunProgram", typeof(uint))]
+    [HarmonyPatch(typeof(VRC.Udon.UdonBehaviour), nameof(VRC.Udon.UdonBehaviour.RunProgram), typeof(uint))]
     class TimeRunProgramPatch {
         static void Prefix(ref Stopwatch __state) {
             __state = new Stopwatch();
@@ -66,6 +94,16 @@ namespace vrc_udon_shit
             if (__instance.serializedProgramAsset.name == "48df62f63db4c32438044816f153d3f3") {
                 UdonShit.logger.Msg($"{__instance.name} ({__instance.serializedProgramAsset.name}) took {__state.Elapsed.TotalSeconds} seconds");
             }
+        }
+    }
+
+    [HarmonyPatch(typeof(VRC.Udon.Common.Factories.UdonHeapFactory), nameof(VRC.Udon.Common.Factories.UdonHeapFactory.ConstructUdonHeap), typeof(uint))]
+    class UdonHeapFactoryPatch {
+        static bool Prefix(uint heapSize, ref IUdonHeap __result) {
+            var heap = new UdonHeapReimpl(heapSize);
+            UdonShit.Objects.Add(heap);
+            __result = new IUdonHeap(heap.Pointer);
+            return false; // we're completely overriding the method, sorry.
         }
     }
 }
