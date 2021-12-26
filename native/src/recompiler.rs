@@ -64,7 +64,14 @@ pub extern "C" fn call_vm_code(code_ptr: *const core::ffi::c_void, state: &mut S
 #[derive(Debug)]
 enum ExternArgs {
     Complete(Vec<u32>),
-    Incomplete(usize)
+    Incomplete(usize),
+}
+
+#[derive(Debug)]
+enum HaltReason {
+    InstructionEOF,
+    MissingArgument, // ERROR: Unexpected EOF in middle of instruction
+    UnknownOpCode(u32) // ERROR: Unknown opcode {this.0}
 }
 
 #[derive(Debug)]
@@ -88,18 +95,31 @@ enum StackOps {
     },
     CopyIncomplete,
     Jump(usize),
-    JumpIndirect(u32)
+    JumpIndirect(u32),
+    Halt(HaltReason)
 }
 
-fn analyze_block_stack(bytecode: &[u32], heap: &UdonHeap, mut pc: usize, wrapper: *const IUdonWrapper) -> Result<Vec<StackOps>, ()> {
+fn analyze_block_stack(bytecode: &[u32], heap: &UdonHeap, mut pc: usize, wrapper: *const IUdonWrapper) -> Vec<StackOps> {
     let mut stack = Vec::<u32>::new();
     let mut ops = Vec::<StackOps>::new();
-    while let Some(&opcode) = bytecode.get(pc >> 2) {
+    let terminating_op = loop {
+        macro_rules! get_or_halt {
+            ($index:expr, $reason:expr) => {
+                if let Some(&opcode) = bytecode.get($index) {
+                    opcode
+                } else {
+                    break StackOps::Halt($reason);
+                }
+            };
+            ($index:expr) => { get_or_halt!($index, HaltReason::MissingArgument) };
+        }
+        let opcode = get_or_halt!(pc >> 2, HaltReason::InstructionEOF);
+
         match FromPrimitive::from_u32(opcode) {
             Some(OpCode::Nop) => { pc += 4; }
             Some(OpCode::Annotation) => { pc += 8; }
             Some(OpCode::Push) => {
-                let heap_slot = *bytecode.get((pc >> 2) + 1).ok_or(())?;
+                let heap_slot = get_or_halt!((pc >> 2) + 1);
                 stack.push(heap_slot);
                 pc += 8;
             }
@@ -116,21 +136,19 @@ fn analyze_block_stack(bytecode: &[u32], heap: &UdonHeap, mut pc: usize, wrapper
             }
             Some(OpCode::JumpIfFalse) => {
                 ops.push(StackOps::JumpIfFalse {
-                    destination: *bytecode.get((pc >> 2) + 1).ok_or(())?,
+                    destination: get_or_halt!((pc >> 2) + 1),
                     arg: stack.pop()
                 });
                 
                 pc += 8;
             }
             Some(OpCode::Jump) => {
-                // TODO: push onto ops?
-                ops.push(StackOps::Push(stack.clone()));
-                let dest = *bytecode.get((pc >> 2) + 1).ok_or(())? as usize;
-                ops.push(StackOps::Jump(dest));
-                break; // ends the block
+                // TODO: detect jump past end of bytecode/to 0xFFFFFFFF as halt?
+                let dest = get_or_halt!((pc >> 2) + 1) as usize;
+                break StackOps::Jump(dest); // ends the block
             }
             Some(OpCode::Extern) => {
-                let heap_slot = *bytecode.get((pc >> 2) + 1).ok_or(())?;
+                let heap_slot = get_or_halt!((pc >> 2) + 1);
                 let signature: &Il2CppString = (*heap).get_object(heap_slot);
                 let parameter_count = unsafe { (*wrapper).get_extern_function_parameter_count(signature) as usize };
 
@@ -146,10 +164,8 @@ fn analyze_block_stack(bytecode: &[u32], heap: &UdonHeap, mut pc: usize, wrapper
                 pc += 8;
             }
             Some(OpCode::JumpIndirect) => {
-                ops.push(StackOps::Push(stack.clone()));
-                let heap_slot = *bytecode.get(pc / 4 + 1).ok_or(())?;
-                ops.push(StackOps::JumpIndirect(heap_slot));
-                break; // ends the block
+                let heap_slot = get_or_halt!((pc >> 2) + 1);
+                break StackOps::JumpIndirect(heap_slot); // ends the block
             }
             Some(OpCode::Copy) => {
                 if stack.len() >= 2 {
@@ -161,9 +177,10 @@ fn analyze_block_stack(bytecode: &[u32], heap: &UdonHeap, mut pc: usize, wrapper
                 }
                 pc += 4;
             }
+            // NOTE: only really applicable if we have a mix of running interpreter and recompiling
             #[allow(unreachable_code, unused_variables)]
             Some(OpCode::CachedExtern) => {
-                let heap_slot = *bytecode.get(pc / 4 + 1).ok_or(())?;
+                let heap_slot = get_or_halt!((pc >> 2) + 1);
                 let parameter_count = unimplemented!(); // TODO: should just have access to the interpreter state.
 
                 ops.push(StackOps::Extern {
@@ -177,17 +194,20 @@ fn analyze_block_stack(bytecode: &[u32], heap: &UdonHeap, mut pc: usize, wrapper
 
                 pc += 8;
             }
-            _ => { 
-                println!("Unknown opcode: {0}", opcode);
-                return Err(());
+            None => { 
+                break StackOps::Halt(HaltReason::UnknownOpCode(opcode));
             },
         }
-    }
+    };
 
-    println!("ops: {:?}", ops);
     if stack.len() != 0 {
         println!("Extra stack count: {}", stack.len());
+        ops.push(StackOps::Push(stack));
     }
 
-    Ok(ops)
+    ops.push(terminating_op);
+
+    println!("ops: {:?}", ops);
+
+    ops
 }
