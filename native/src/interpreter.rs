@@ -75,9 +75,14 @@ impl InterpreterState {
     pub fn interpret(&mut self) -> Option<()> {
         while let Some(&opcode) = self.bytecode.get(self.pc / 4) {
             match FromPrimitive::from_u32(opcode) {
-                Some(OpCode::Nop | OpCode::Annotation) => {
-                    // println!("OpCode::Nop/OpCode::Annotation");
+                Some(OpCode::Nop) => {
+                    // println!("OpCode::Nop");
                     self.pc += 4;
+                }
+                Some(OpCode::Annotation) => {
+                    // println!("OpCode::Annotation");
+                    // there is an extra argument here we could take advantage of, if we cared.
+                    self.pc += 8;
                 }
                 Some(OpCode::Push) => {
                     // println!("OpCode::Push");
