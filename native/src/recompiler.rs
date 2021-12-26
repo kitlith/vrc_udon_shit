@@ -86,10 +86,12 @@ enum StackOps {
         src: u32,
         dst: u32
     },
-    CopyIncomplete
+    CopyIncomplete,
+    Jump(usize),
+    JumpIndirect(u32)
 }
 
-fn analyze_block_stack(bytecode: &[u32], heap: &UdonHeap, mut pc: usize, wrapper: *const IUdonWrapper) -> Result<(Vec<StackOps>, Vec<u32>), ()> {
+fn analyze_block_stack(bytecode: &[u32], heap: &UdonHeap, mut pc: usize, wrapper: *const IUdonWrapper) -> Result<Vec<StackOps>, ()> {
     let mut stack = Vec::<u32>::new();
     let mut ops = Vec::<StackOps>::new();
     while let Some(&opcode) = bytecode.get(pc >> 2) {
@@ -122,7 +124,9 @@ fn analyze_block_stack(bytecode: &[u32], heap: &UdonHeap, mut pc: usize, wrapper
             }
             Some(OpCode::Jump) => {
                 // TODO: push onto ops?
-                pc = *bytecode.get((pc >> 2) + 1).ok_or(())? as usize;
+                ops.push(StackOps::Push(stack.clone()));
+                let dest = *bytecode.get((pc >> 2) + 1).ok_or(())? as usize;
+                ops.push(StackOps::Jump(dest));
                 break; // ends the block
             }
             Some(OpCode::Extern) => {
@@ -142,10 +146,9 @@ fn analyze_block_stack(bytecode: &[u32], heap: &UdonHeap, mut pc: usize, wrapper
                 pc += 8;
             }
             Some(OpCode::JumpIndirect) => {
+                ops.push(StackOps::Push(stack.clone()));
                 let heap_slot = *bytecode.get(pc / 4 + 1).ok_or(())?;
-                let jump_target: u32 = *heap.get_value(heap_slot);
-                // TODO: push onto ops?
-                pc = jump_target as usize;
+                ops.push(StackOps::JumpIndirect(heap_slot));
                 break; // ends the block
             }
             Some(OpCode::Copy) => {
@@ -186,5 +189,5 @@ fn analyze_block_stack(bytecode: &[u32], heap: &UdonHeap, mut pc: usize, wrapper
         println!("Extra stack count: {}", stack.len());
     }
 
-    Ok((ops, stack))
+    Ok(ops)
 }
