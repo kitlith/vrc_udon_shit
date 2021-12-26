@@ -6,7 +6,7 @@ using MelonLoader;
 using VRC.Udon.Common.Interfaces;
 using static UnhollowerRuntimeLib.ClassInjector;
 
-[assembly: MelonInfo(typeof(vrc_udon_shit.UdonShit), "Udon Shit", "0.0.1", "Kitlith")]
+[assembly: MelonInfo(typeof(vrc_udon_shit.UdonShit), "Udon Shit", "0.0.1", "Kitlith & Behemoth")]
 [assembly: MelonGame("VRChat", "VRChat")]
 
 namespace vrc_udon_shit {

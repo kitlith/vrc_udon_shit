@@ -1,28 +1,41 @@
 <Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup Condition=" '$(OS)' == 'Windows_NT' ">
+    <VRChatPath>C:\Program Files (x86)\Steam\steamapps\common\VRChat</VRChatPath>
+    <CargoTargetDir>native/target</CargoTargetDir>
+  </PropertyGroup>
+
+  <PropertyGroup Condition=" '$(OS)' == 'Unix' ">
+    <VRChatPath>$(HOME)/.steam/steam/steamapps/common/VRChat</VRChatPath>
+    <!-- msvc target requires link.exe, not feasible on linux. -->
+    <CargoFlags>--target x86_64-pc-windows-gnu</CargoFlags>
+    <CargoTargetDir>native/target/x86_64-pc-windows-gnu</CargoTargetDir>
+  </PropertyGroup>
 
   <PropertyGroup>
     <TargetFramework>net472</TargetFramework>
     <LangVersion>8.0</LangVersion>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <VRChatPath>C:\Program Files (x86)\Steam\steamapps\common\VRChat</VRChatPath>
 
-    <Authors>Kitlith</Authors>
+    <Authors>Kitlith, Behemoth</Authors>
     <Version>0.0.1</Version>
     <AssemblyVersion>0.0.1.0</AssemblyVersion>
     <FileVersion>0.0.1.0</FileVersion>
 
     <AssemblySearchPaths>$(AssemblySearchPaths);$(VRChatPath)\MelonLoader\Managed</AssemblySearchPaths>
-
-    <DefaultItemExcludes>$(DefaultItemExcludes);UdonSharp_Tests/**</DefaultItemExcludes>
   </PropertyGroup>
 
   <Target Name="Cargo build native library" BeforeTargets="PrepareForBuild">
-      <Exec Command="cargo build --release --manifest-path native/Cargo.toml"/>
+      <Error Condition=" '$(VRChatPath)' == '' " Text="The VRChatPath property is not set! Please set it! OS = $(OS)"/>
+      <Exec Command="cargo build --release --manifest-path native/Cargo.toml $(CargoFlags)"/>
+  </Target>
+
+  <Target Name="Cargo clean" AfterTargets="Clean">
+      <Exec Command="cargo clean --manifest-path native/Cargo.toml"/>
   </Target>
 
   <ItemGroup>
     <None Remove="native.dll" />
-    <EmbeddedResource Include="native/target/release/native.dll">
+    <EmbeddedResource Include="$(CargoTargetDir)/release/native.dll">
       <LogicalName>native.dll</LogicalName>
     </EmbeddedResource>
   </ItemGroup>
