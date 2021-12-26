@@ -1,0 +1,3 @@
+[toolchain]
+# we literally only need this for inline assembly, move up the stability matrix as it becomes available.
+channel = "nightly"

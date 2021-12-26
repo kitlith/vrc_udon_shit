@@ -21,7 +21,7 @@ pub struct InterpreterState {
 }
 
 #[derive(FromPrimitive)]
-enum OpCode {
+pub enum OpCode {
     Nop = 0,
     Push = 1,
     Pop = 2,
