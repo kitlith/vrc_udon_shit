@@ -12,3 +12,4 @@ mod span;
 mod udon_types;
 mod interpreter;
 mod recompiler;
+mod emit;

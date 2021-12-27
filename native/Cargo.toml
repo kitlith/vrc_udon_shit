@@ -10,6 +10,7 @@ libc = "0.2.112"
 rustc-hash = "1.1.0"
 num-traits = "0.2.14"
 num-derive = "0.3.3"
+dynasmrt = "1.2.1"
 
 [build-dependencies]
 cc = "1.0"
