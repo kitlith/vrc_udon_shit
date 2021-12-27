@@ -11,11 +11,6 @@ pub struct State {
     stack_ptr: *mut core::ffi::c_void,  // r13 / x20
 }
 
-extern "C" {
-    // meant to be jumped to by jitted assembly!
-    //fn vm_code_return();
-}
-
 // NOTE: This has undefined behaviour! C++ exceptions are not supposed to unwind through rust functions.
 // this seems to work anyway on windows? so why the fuck not.
 #[no_mangle]
@@ -36,6 +31,7 @@ pub extern "C" fn call_vm_code(code_ptr: *const core::ffi::c_void, state: &mut S
             // we don't really care which register this goes in
             // but as the first arg it should already be in rcx
             inout("rcx") code_ptr => _,
+            // TODO: setup registers/state struct to match code emitted in emit.rs
             inout("r12") state.heap_ptr,
             inout("r13") state.stack_ptr,
             out("rax") ret,

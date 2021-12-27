@@ -4,24 +4,74 @@ use crate::il2cpp_object::Il2CppObject;
 use crate::recompiler::{ExternArgs, StackOps};
 use crate::udon_types::UdonHeap;
 
+struct Context {
+    stack: Vec<u32>,
+    // ...?
+}
+
+impl Context {
+    fn reserve_stack(&mut self, size: u64) -> *mut u32 {
+        self.stack.resize(size as usize, 0u32);
+        self.stack.as_mut_ptr()
+    }
+}
+
+extern "C" {
+    // meant to be jumped to by jitted assembly!
+    fn vm_code_return();
+}
+
+macro_rules! udon_dynasm {
+    ($ops:ident $($t:tt)*) => {
+        dynasm!($ops
+            ; .arch x64
+            // RBX, RBP, RDI, RSI, RSP, R12-R15 are callee-saved registers.
+            // ditch RBP and RSP since those mess with the stack/frame pointers
+            // remaining named registers are RBX, RDI, RSI
+            // am gonna use R12-R15 first, because i don't want to think about special purpose registers.
+            // let's leave rdi/rsi for rep movs copying.
+            // NOTE: we could always stuff a bunch of stuff in the context struct and not have it around persistantly.
+            ; .alias heap_ptr, r12
+            ; .alias stack_base, r13
+            ; .alias stack_count, r14
+            ; .alias span_ptr, r15
+            ; .alias context, rbx
+            // return code/return bytecode pc
+            ; .alias retval, rax
+            // arguments
+            ; .alias arg1, rcx
+            ; .alias arg2, rdx
+            ; .alias arg2_32, edx
+            ; .alias arg3, r8
+            ; .alias arg4, r9
+            $($t)*
+        )
+    }
+}
+
 pub fn emit(ops: &[StackOps]) {
     let mut assembler = dynasmrt::x64::Assembler::new().unwrap();
 
-    dynasm!(assembler
-        /* Push heap to rsi and keep it there */
-        ; mov rsi, rdi
-    );
-
     fn push_n(assembler: &mut dynasmrt::x64::Assembler, params: &[u32]) {
         /* Extend stack */
-        dynasm!(assembler
-            ; sub rsp, (params.len() * 0x4) as i32
+        udon_dynasm!(assembler
+            ; mov arg1, context
+            ; mov arg2, params.len() as _
+            ; add arg2, stack_count
+            // TODO: we should be able to detect this condition before even entering the block!
+            ; mov rax, QWORD Context::reserve_stack as _
+            ; call rax
+            ; mov stack_base, retval
         );
         for (offset, &value) in params.iter().enumerate() {
-            dynasm!(assembler
-                ; mov DWORD [rsp + (offset * 0x4) as i32], value as i32
+            // TODO: memcpy
+            udon_dynasm!(assembler
+                ; mov DWORD [stack_base + stack_count * 0x4 + (offset * 4) as i32], DWORD value as _
             );
         }
+        udon_dynasm!(assembler
+            ; add stack_count, params.len() as _
+        );
     }
 
     for op in ops {
@@ -30,8 +80,9 @@ pub fn emit(ops: &[StackOps]) {
                 push_n(&mut assembler, &params);
             }
             StackOps::Pop(count) => {
-                dynasm!(assembler
-                    ; add rsp, (count * 0x4) as i32
+                udon_dynasm!(assembler
+                    ; sub stack_count, *count as _
+                    // TODO: check if negative, return HaltReason::StackUnderflow
                 );
             }
             StackOps::Extern {
@@ -42,6 +93,7 @@ pub fn emit(ops: &[StackOps]) {
             } => {
                 let count = match &args {
                     ExternArgs::Complete(params) => {
+                        // TODO: allocate a complete slice somewhere that we can embed a pointer to
                         push_n(&mut assembler, params);
                         params.len()
                     }
@@ -51,20 +103,21 @@ pub fn emit(ops: &[StackOps]) {
                     }
                 };
                 let addr = *target as *const Il2CppObject;
-                dynasm!(assembler
-                    /* Construct Span<u32> pointing to stack top */
-                    ; mov rdx, rsp
-                    ; sub rsp, BYTE 0x18
-                    ; mov QWORD [rsp + 0x00], 0
-                    ; mov QWORD [rsp + 0x08], rdx
-                    ; mov DWORD [rsp + 0x10], count as _
+                udon_dynasm!(assembler
+                    ; sub stack_count, count as _
+                    // TODO: check if count negative, return HaltReason::StackUnderflow
+                    ; lea arg3, [stack_base + stack_count * 4]
+                    /* Construct Span<u32> pointing to stack */
+                    ; mov QWORD [span_ptr + 0x00], 0
+                    ; mov QWORD [span_ptr + 0x08], arg3
+                    ; mov DWORD [span_ptr + 0x10], count as _
                     
-                    ; mov rdx, rsp // &span
-                    /* Heap already in position */
-                    ; mov rdi, addr as _ // &target
+                    ; mov arg1, QWORD addr as _
+                    ; mov arg2, heap_ptr
+                    ; mov arg3, span_ptr
                     /* Invoke extern */
-                    ; call *callback as _
-                    ; add rsp, BYTE 0x18 + (count * 0x4) as i8
+                    ; mov rax, QWORD *callback as _
+                    ; call rax
                 );
             }
             StackOps::JumpIfFalse {
@@ -73,52 +126,86 @@ pub fn emit(ops: &[StackOps]) {
             } => {
                 /* Load bool flag from heap */
                 if let Some(address) = arg {
-                    dynasm!(assembler
-                        ; mov rdx, *address as _
+                    udon_dynasm!(assembler
+                        ; mov arg2, *address as _
                     );
                 } else {
-                    dynasm!(assembler
-                        ; pop rdx
+                    udon_dynasm!(assembler
+                        ; sub stack_count, 1
+                        // TODO: check if count negative, return HaltReason::StackUnderflow
+                        ; mov arg2_32, DWORD [stack_base + stack_count * 4]
                     );
                 }
-                dynasm!(assembler
-                    ; mov rdi, rsi // &heap
-                    ; call UdonHeap::get_value::<bool> as _
-                    /* TODO: fix jump destination */
-                    ; jz *destination as _
-                    ; mov rsi, rdi
+                udon_dynasm!(assembler
+                    ; mov arg1, heap_ptr
+                    ; mov rax, QWORD UdonHeap::get_value::<bool> as _
+                    ; call rax
+
+                    // get_value returns pointer
+                    // TODO: what is proper size to read here?
+                    ; mov eax, DWORD [retval]
+                    ; test eax, eax // set ZF
+                    ; jnz >skip_jmp
+                    // retval houses destination opcode
+                    ; mov retval, DWORD *destination as _
+                    ; mov rcx, QWORD vm_code_return as _
+                    ; jmp rcx
+                    ; skip_jmp:
+                    //; mov rsi, rdi // not sure what this was for...
                 );
-                unimplemented!();
             }
             StackOps::CopyComplete { src, dst } => {
-                dynasm!(assembler
-                    ; mov rdi, rsi // &heap
-                    ; mov esi, *src as _
-                    ; mov edx, *dst as _
-                    ; call UdonHeap::copy_variables as _
-                    ; mov rsi, rdi
+                udon_dynasm!(assembler
+                    ; mov arg1, heap_ptr // &heap
+                    ; mov arg2, DWORD *src as _
+                    ; mov arg3, DWORD *dst as _
+                    ; mov rax, QWORD UdonHeap::copy_variables as _
+                    ; call rax
+                    //; mov rsi, rdi
                 );
             }
             StackOps::CopyIncomplete => {
-                dynasm!(assembler
-                    ; mov rdi, rsi // &heap
-                    ; mov esi, [rsp + 0x8] // src
-                    ; mov edx, [rsp + 0x0] // dst
-                    ; call UdonHeap::copy_variables as _
-                    ; mov rsi, rdi
+                udon_dynasm!(assembler
+                    ; sub stack_count, 2
+                    // TODO: check if count negative, return HaltReason::StackUnderflow
+                    ; mov arg1, heap_ptr
+                    ; mov arg2, [stack_base + 0x0]
+                    ; mov arg3, [stack_base + 0x4]
+                    ; mov rax, QWORD UdonHeap::copy_variables as _
+                    ; call rax
+                    //; mov rsi, rdi
                 );
             }
             StackOps::Jump(destination) => {
-                /* TODO */
-                unimplemented!();
+                udon_dynasm!(assembler
+                    ; mov retval, DWORD *destination as _
+                    ; mov rcx, QWORD vm_code_return as _
+                    ; jmp rcx
+                );
             }
             StackOps::JumpIndirect(address) => {
-                /* TODO */
-                unimplemented!();
+                udon_dynasm!(assembler
+                    ; mov arg1, heap_ptr
+                    ; mov arg2, DWORD *address as _
+                    ; mov rax, QWORD UdonHeap::get_value::<u32> as _
+                    ; call rax
+
+                    // get_value returns pointer
+                    ; mov eax, DWORD [retval]
+                    ; mov rcx, QWORD vm_code_return as _
+                    ; jmp rcx
+                );
             }
-            _ => {
-                panic!("Unknown StackOps");
+            StackOps::Halt(reason) => {
+                udon_dynasm!(assembler
+                    ; mov retval, QWORD reason.encode() as _
+                    ; mov rcx, QWORD vm_code_return as _
+                    ; jmp rcx
+                );
             }
+            // _ => {
+            //     panic!("Unknown StackOps");
+            // }
         }
         // dynasm!(assembler)
     }
