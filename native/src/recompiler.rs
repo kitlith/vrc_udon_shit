@@ -2,7 +2,7 @@ use core::arch::asm;
 use num_traits::FromPrimitive;
 
 use crate::interpreter::OpCode;
-//use crate::il2cpp_object::Il2CppObject;
+use crate::il2cpp_object::Il2CppObject;
 use crate::il2cpp_string::Il2CppString;
 use crate::udon_types::{UdonHeap, UdonWrapperCallbackType, IUdonWrapper};
 
@@ -62,25 +62,37 @@ pub extern "C" fn call_vm_code(code_ptr: *const core::ffi::c_void, state: &mut S
 }
 
 #[derive(Debug)]
-enum ExternArgs {
+pub enum ExternArgs {
     Complete(Vec<u32>),
     Incomplete(usize),
 }
 
 #[derive(Debug)]
-enum HaltReason {
+pub enum HaltReason {
     InstructionEOF,
     MissingArgument, // ERROR: Unexpected EOF in middle of instruction
-    UnknownOpCode(u32) // ERROR: Unknown opcode {this.0}
+    UnknownOpCode(u32), // ERROR: Unknown opcode {this.0}
+    StackUnderflow, // ERROR: tried to pop item when stack was empty!
 }
 
-#[derive(Debug)]
-enum StackOps {
+impl HaltReason {
+    pub fn encode(&self) -> u64 {
+        match self {
+            HaltReason::InstructionEOF => (0x00000000 << 32) | 0xFFFFFFFF, // no error, PC oob
+            HaltReason::MissingArgument => (0x00000001 << 32),
+            HaltReason::UnknownOpCode(op) => (0x00000002 << 32) | *op as u64,
+            HaltReason::StackUnderflow => (0x00000003 << 32)
+        }
+    }
+}
+
+//#[derive(Debug)]
+pub enum StackOps {
     Push(Vec<u32>),
     Pop(usize),
     Extern {
-        // callback: UdonWrapperCallbackType,
-        // target: &'static Il2CppObject,
+        callback: UdonWrapperCallbackType,
+        target: &'static Il2CppObject,
         // keep track of the original index in case we need to invalidate the block.
         heap_slot: u32,
         args: ExternArgs
@@ -102,6 +114,14 @@ enum StackOps {
 fn analyze_block_stack(bytecode: &[u32], heap: &UdonHeap, mut pc: usize, wrapper: *const IUdonWrapper) -> Vec<StackOps> {
     let mut stack = Vec::<u32>::new();
     let mut ops = Vec::<StackOps>::new();
+
+    fn flush_stack(stack: &mut Vec<u32>, ops: &mut Vec<StackOps>) {
+        if stack.len() != 0 {
+            let items = std::mem::replace(stack, Vec::new());
+            ops.push(StackOps::Push(items));
+        }
+    }
+
     let terminating_op = loop {
         macro_rules! get_or_halt {
             ($index:expr, $reason:expr) => {
@@ -124,7 +144,6 @@ fn analyze_block_stack(bytecode: &[u32], heap: &UdonHeap, mut pc: usize, wrapper
                 pc += 8;
             }
             Some(OpCode::Pop) => {
-                // TODO: coalesce, so long as it is not separated by other incomplete ops.
                 if stack.pop().is_none() {
                     if let Some(StackOps::Pop(count)) = ops.last_mut() {
                         *count += 1;
@@ -150,16 +169,22 @@ fn analyze_block_stack(bytecode: &[u32], heap: &UdonHeap, mut pc: usize, wrapper
             Some(OpCode::Extern) => {
                 let heap_slot = get_or_halt!((pc >> 2) + 1);
                 let signature: &Il2CppString = (*heap).get_object(heap_slot);
+                let method = unsafe { (*wrapper).get_extern_function_delegate(signature) };
                 let parameter_count = unsafe { (*wrapper).get_extern_function_parameter_count(signature) as usize };
 
-                ops.push(StackOps::Extern {
+                let op = StackOps::Extern {
+                    callback: method.method_ptr,
+                    target: method.m_target,
                     heap_slot,
                     args: if stack.len() >= parameter_count {
                         ExternArgs::Complete(stack.split_off(stack.len()-parameter_count))
                     } else {
+                        flush_stack(&mut stack, &mut ops);
                         ExternArgs::Incomplete(parameter_count)
                     }
-                });
+                };
+
+                ops.push(op);
 
                 pc += 8;
             }
@@ -173,6 +198,7 @@ fn analyze_block_stack(bytecode: &[u32], heap: &UdonHeap, mut pc: usize, wrapper
                     let src = stack.pop().unwrap();
                     ops.push(StackOps::CopyComplete { src, dst });
                 } else {
+                    flush_stack(&mut stack, &mut ops);
                     ops.push(StackOps::CopyIncomplete);
                 }
                 pc += 4;
@@ -183,14 +209,14 @@ fn analyze_block_stack(bytecode: &[u32], heap: &UdonHeap, mut pc: usize, wrapper
                 let heap_slot = get_or_halt!((pc >> 2) + 1);
                 let parameter_count = unimplemented!(); // TODO: should just have access to the interpreter state.
 
-                ops.push(StackOps::Extern {
-                    heap_slot,
-                    args: if stack.len() >= parameter_count {
-                        ExternArgs::Complete(stack.split_off(stack.len()-parameter_count))
-                    } else {
-                        ExternArgs::Incomplete(parameter_count)
-                    }
-                });
+                // ops.push(StackOps::Extern {
+                //     heap_slot,
+                //     args: if stack.len() >= parameter_count {
+                //         ExternArgs::Complete(stack.split_off(stack.len()-parameter_count))
+                //     } else {
+                //         ExternArgs::Incomplete(parameter_count)
+                //     }
+                // });
 
                 pc += 8;
             }
@@ -200,14 +226,11 @@ fn analyze_block_stack(bytecode: &[u32], heap: &UdonHeap, mut pc: usize, wrapper
         }
     };
 
-    if stack.len() != 0 {
-        println!("Extra stack count: {}", stack.len());
-        ops.push(StackOps::Push(stack));
-    }
+    flush_stack(&mut stack, &mut ops);
 
     ops.push(terminating_op);
 
-    println!("ops: {:?}", ops);
+    //println!("ops: {:?}", ops);
 
     ops
 }
