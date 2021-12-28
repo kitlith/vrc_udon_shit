@@ -57,7 +57,7 @@ pub extern "C" fn call_vm_code(code_ptr: *const core::ffi::c_void, state: &mut S
     ret
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum ExternArgs {
     Complete(Vec<u32>),
     Incomplete(usize),
@@ -72,7 +72,7 @@ impl ExternArgs {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum ReturnCode {
     // semantics of Continue are: detect if should halt, find next block, compile next block if necessary.
     Continue(u32),
@@ -96,7 +96,7 @@ impl ReturnCode {
     }
 
     pub fn decode(val: u64) -> Self {
-        match (val >> 32) {
+        match val >> 32 {
             0x00000000 => ReturnCode::Continue(val as u32),
             0x80000000 => ReturnCode::RequestInterpreter(val as u32),
             0x00000001 => ReturnCode::MissingArgument,
@@ -107,7 +107,7 @@ impl ReturnCode {
     }
 }
 
-//#[derive(Debug)]
+#[derive(Clone)]
 pub enum StackOps {
     Push(Vec<u32>),
     Pop(usize),

@@ -1,4 +1,4 @@
-use dynasmrt::{self, dynasm, DynasmApi, DynasmLabelApi};
+use dynasmrt::{self, dynasm, DynasmApi, DynasmLabelApi, ExecutableBuffer};
 
 use crate::il2cpp_object::Il2CppObject;
 use crate::recompiler::{ExternArgs, StackOps, ReturnCode};
@@ -38,18 +38,23 @@ macro_rules! udon_dynasm {
             ; .alias context, rbx
             // return code/return bytecode pc
             ; .alias retval, rax
+            ; .alias retval_32, eax
+            ; .alias retval_8, al
             // arguments
             ; .alias arg1, rcx
+            ; .alias arg1_32, ecx
             ; .alias arg2, rdx
             ; .alias arg2_32, edx
             ; .alias arg3, r8
+            ; .alias arg3_32, r8d
             ; .alias arg4, r9
+            ; .alias arg4_32, r9d
             $($t)*
         )
     }
 }
 
-pub fn emit(ops: &[StackOps]) {
+pub fn emit(ops: &[StackOps]) -> ExecutableBuffer {
     let mut assembler = dynasmrt::x64::Assembler::new().unwrap();
 
     fn push_n(assembler: &mut dynasmrt::x64::Assembler, params: &[u32]) {
@@ -197,10 +202,10 @@ pub fn emit(ops: &[StackOps]) {
                     // UdonHeap::get_value(heap, slot_address)
                     ; call rax
 
-                    ; test retval, retval // set ZF
+                    ; test retval_8, retval_8 // set ZF
                     ; jnz >skip_jmp
                     // retval houses destination address
-                    ; mov retval, DWORD *destination as _
+                    ; mov retval_32, DWORD *destination as _
                     // TODO: save function pointer offset for future modification
                     ; mov rcx, QWORD vm_code_return as _
                     // return destination
@@ -211,8 +216,8 @@ pub fn emit(ops: &[StackOps]) {
             StackOps::CopyComplete { src, dst } => {
                 udon_dynasm!(assembler
                     ; mov arg1, heap_ptr // &heap
-                    ; mov arg2, DWORD *src as _
-                    ; mov arg3, DWORD *dst as _
+                    ; mov arg2_32, DWORD *src as _
+                    ; mov arg3_32, DWORD *dst as _
                     ; mov rax, QWORD UdonHeap::copy_variables as _
                     // UdonHeap::copy_variables(heap, src, dst)
                     ; call rax
@@ -222,8 +227,8 @@ pub fn emit(ops: &[StackOps]) {
                 udon_dynasm!(assembler
                     ; sub stack_count, 2
                     ; mov arg1, heap_ptr
-                    ; mov arg2, [stack_base + 0x0]
-                    ; mov arg3, [stack_base + 0x4]
+                    ; mov arg2_32, DWORD [stack_base + stack_count * 4 + 0x0]
+                    ; mov arg3_32, DWORD [stack_base + stack_count * 4 + 0x4]
                     ; mov rax, QWORD UdonHeap::copy_variables as _
                     // UdonHeap::copy_variables(heap, src, dst)
                     ; call rax
@@ -231,7 +236,7 @@ pub fn emit(ops: &[StackOps]) {
             }
             StackOps::Jump(destination) => {
                 udon_dynasm!(assembler
-                    ; mov retval, DWORD *destination as _
+                    ; mov retval_32, DWORD *destination as _
                     // TODO: save function pointer offset for future modification
                     ; mov rcx, QWORD vm_code_return as _
                     // return destination
@@ -241,9 +246,12 @@ pub fn emit(ops: &[StackOps]) {
             StackOps::JumpIndirect(address) => {
                 udon_dynasm!(assembler
                     ; mov arg1, heap_ptr
-                    ; mov arg2, DWORD *address as _
+                    ; mov arg2_32, DWORD *address as _
                     ; mov rax, QWORD UdonHeap::get_value::<u32> as _
                     ; call rax
+
+                    // zero upper half of return, just in case.
+                    ; mov retval_32, retval_32
 
                     // TODO: attempt to query for existing block before returning
                     ; mov rcx, QWORD vm_code_return as _
@@ -267,4 +275,6 @@ pub fn emit(ops: &[StackOps]) {
     }
 
     let block = assembler.finalize().unwrap();
+
+    block
 }
