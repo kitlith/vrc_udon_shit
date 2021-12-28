@@ -33,8 +33,8 @@ impl UdonHeap {
     pub fn copy_variables(&mut self, src: u32, dst: u32) {
         unsafe { ((*CALLBACKS).copy_variables)(self, src, dst) }
     }
-    pub fn get_value<T>(&self, address: u32) -> &T {
-        unsafe { self.get_variable(address).unbox() }
+    pub fn get_value<T: Copy>(&self, address: u32) -> T {
+        unsafe { *self.get_variable(address).unbox() }
     }
     pub fn get_object<T>(&self, address: u32) -> &T {
         unsafe { self.get_variable(address).cast() }

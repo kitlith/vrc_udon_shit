@@ -63,21 +63,46 @@ pub enum ExternArgs {
     Incomplete(usize),
 }
 
+impl ExternArgs {
+    pub fn len(&self) -> usize {
+        match self {
+            ExternArgs::Complete(a) => a.len(),
+            ExternArgs::Incomplete(c) => *c
+        }
+    }
+}
+
 #[derive(Debug)]
-pub enum HaltReason {
-    InstructionEOF,
+pub enum ReturnCode {
+    // semantics of Continue are: detect if should halt, find next block, compile next block if necessary.
+    Continue(u32),
+    RequestInterpreter(u32), // NOTE: currently only used for stack underflow condition.
     MissingArgument, // ERROR: Unexpected EOF in middle of instruction
     UnknownOpCode(u32), // ERROR: Unknown opcode {this.0}
     StackUnderflow, // ERROR: tried to pop item when stack was empty!
+    UnknownReturn(u64)
 }
 
-impl HaltReason {
+impl ReturnCode {
     pub fn encode(&self) -> u64 {
         match self {
-            HaltReason::InstructionEOF => (0x00000000 << 32) | 0xFFFFFFFF, // no error, PC oob
-            HaltReason::MissingArgument => (0x00000001 << 32),
-            HaltReason::UnknownOpCode(op) => (0x00000002 << 32) | *op as u64,
-            HaltReason::StackUnderflow => (0x00000003 << 32)
+            ReturnCode::Continue(pc) => *pc as u64,
+            ReturnCode::RequestInterpreter(pc) => *pc as u64 | (1 << 63),
+            ReturnCode::MissingArgument => (0x00000001 << 32),
+            ReturnCode::UnknownOpCode(op) => (0x00000002 << 32) | *op as u64,
+            ReturnCode::StackUnderflow => (0x00000003 << 32),
+            ReturnCode::UnknownReturn(unk) => *unk,
+        }
+    }
+
+    pub fn decode(val: u64) -> Self {
+        match (val >> 32) {
+            0x00000000 => ReturnCode::Continue(val as u32),
+            0x80000000 => ReturnCode::RequestInterpreter(val as u32),
+            0x00000001 => ReturnCode::MissingArgument,
+            0x00000002 => ReturnCode::UnknownOpCode(val as u32),
+            //0x00000003 => ReturnCode::StackUnderflow,
+            unk => ReturnCode::UnknownReturn(unk),
         }
     }
 }
@@ -93,6 +118,7 @@ pub enum StackOps {
         heap_slot: u32,
         args: ExternArgs
     },
+    // can be implemented as a return, 
     JumpIfFalse {
         destination: u32,
         arg: Option<u32>
@@ -102,9 +128,12 @@ pub enum StackOps {
         dst: u32
     },
     CopyIncomplete,
+    // can be implemented as a return, possible optimization is to jump directly to next block
     Jump(usize),
+    // will be implemented as a return, possible optimization to query block cache and attempt to dispatch next block.
     JumpIndirect(u32),
-    Halt(HaltReason)
+    // exit vm code, return to handler.
+    Return(ReturnCode),
 }
 
 fn analyze_block_stack(bytecode: &[u32], heap: &UdonHeap, mut pc: usize, wrapper: *const IUdonWrapper) -> Vec<StackOps> {
@@ -124,12 +153,12 @@ fn analyze_block_stack(bytecode: &[u32], heap: &UdonHeap, mut pc: usize, wrapper
                 if let Some(&opcode) = bytecode.get($index) {
                     opcode
                 } else {
-                    break StackOps::Halt($reason);
+                    break StackOps::Return($reason);
                 }
             };
-            ($index:expr) => { get_or_halt!($index, HaltReason::MissingArgument) };
+            ($index:expr) => { get_or_halt!($index, ReturnCode::MissingArgument) };
         }
-        let opcode = get_or_halt!(pc >> 2, HaltReason::InstructionEOF);
+        let opcode = get_or_halt!(pc >> 2, ReturnCode::Continue(pc as u32));
 
         match FromPrimitive::from_u32(opcode) {
             Some(OpCode::Nop) => { pc += 4; }
@@ -160,7 +189,13 @@ fn analyze_block_stack(bytecode: &[u32], heap: &UdonHeap, mut pc: usize, wrapper
             Some(OpCode::Jump) => {
                 // TODO: detect jump past end of bytecode/to 0xFFFFFFFF as halt?
                 let dest = get_or_halt!((pc >> 2) + 1) as usize;
-                break StackOps::Jump(dest); // ends the block
+
+                // ends the block
+                break if dest == 0xFFFFFFFF || dest == 0xFFFFFFFC {
+                    StackOps::Return(ReturnCode::Continue(dest as u32))
+                } else {
+                    StackOps::Jump(dest)
+                };
             }
             Some(OpCode::Extern) => {
                 let heap_slot = get_or_halt!((pc >> 2) + 1);
@@ -217,7 +252,7 @@ fn analyze_block_stack(bytecode: &[u32], heap: &UdonHeap, mut pc: usize, wrapper
                 pc += 8;
             }
             None => { 
-                break StackOps::Halt(HaltReason::UnknownOpCode(opcode));
+                break StackOps::Return(ReturnCode::UnknownOpCode(opcode));
             },
         }
     };

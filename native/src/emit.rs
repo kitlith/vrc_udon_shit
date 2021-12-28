@@ -1,7 +1,7 @@
 use dynasmrt::{self, dynasm, DynasmApi, DynasmLabelApi};
 
 use crate::il2cpp_object::Il2CppObject;
-use crate::recompiler::{ExternArgs, StackOps};
+use crate::recompiler::{ExternArgs, StackOps, ReturnCode};
 use crate::udon_types::UdonHeap;
 
 struct Context {
@@ -53,24 +53,81 @@ pub fn emit(ops: &[StackOps]) {
     let mut assembler = dynasmrt::x64::Assembler::new().unwrap();
 
     fn push_n(assembler: &mut dynasmrt::x64::Assembler, params: &[u32]) {
-        /* Extend stack */
-        udon_dynasm!(assembler
-            ; mov arg1, context
-            ; mov arg2, params.len() as _
-            ; add arg2, stack_count
-            // TODO: we should be able to detect this condition before even entering the block!
-            ; mov rax, QWORD Context::reserve_stack as _
-            ; call rax
-            ; mov stack_base, retval
-        );
         for (offset, &value) in params.iter().enumerate() {
-            // TODO: memcpy
             udon_dynasm!(assembler
                 ; mov DWORD [stack_base + stack_count * 0x4 + (offset * 4) as i32], DWORD value as _
             );
         }
         udon_dynasm!(assembler
             ; add stack_count, params.len() as _
+        );
+    }
+
+    let mut min_stack: isize = 0;
+    let mut max_stack: isize = 0;
+    {
+        let mut cur_stack: isize = 0;
+        for op in ops {
+            // NOTE: this match block is tied to the codegen down below.
+            match op {
+                StackOps::Push(params) => {
+                    cur_stack += params.len() as isize;
+                    max_stack = std::cmp::max(max_stack, cur_stack);
+                }
+                StackOps::Pop(count) => {
+                    cur_stack -= *count as isize;
+                }
+                StackOps::Extern { args, .. } => {
+                    // NOTE: eventually complete externs won't push to the stack.
+                    if let ExternArgs::Complete(args) = args {
+                        cur_stack += args.len() as isize;
+                        max_stack = std::cmp::max(max_stack, cur_stack);
+                    }
+                    cur_stack -= args.len() as isize;
+                }
+                StackOps::JumpIfFalse { arg: Some(_), .. } => continue,
+                StackOps::JumpIfFalse { arg: None, .. } => {
+                    cur_stack -= 1;
+                }
+                StackOps::CopyComplete {..} => continue,
+                StackOps::CopyIncomplete => {
+                    cur_stack -= 2;
+                }
+                StackOps::Jump(_) | StackOps::JumpIndirect(_) | StackOps::Return(_) => continue,
+            }
+
+            min_stack = std::cmp::min(min_stack, cur_stack);
+        }
+    }
+    
+    // i.e.: there are incomplete operations
+    if min_stack < 0 {
+        udon_dynasm!(assembler
+            ; cmp stack_count, (-min_stack) as u32 as _
+            ; jge >skip_jmp
+            // if count < minimal stack removal
+            // this is not a happy path, we don't care about speed here, VM is about to halt.
+            // TODO: embed block PC? or should we just have trampoline infer from which block just returned?
+            ; mov retval, QWORD ReturnCode::RequestInterpreter(0).encode() as _
+            ; mov rcx, QWORD vm_code_return as _
+            // return RequestInterpreter
+            ; jmp rcx
+            // else continue
+            ; skip_jmp:
+        );
+    }
+
+    // this will almost always be true...
+    if max_stack > 0 {
+        /* Extend stack */
+        udon_dynasm!(assembler
+            ; mov arg1, context
+            ; mov arg2, max_stack as _
+            ; add arg2, stack_count
+            // Context::reserve_stack(context, max_stack+stack_count)
+            ; mov rax, QWORD Context::reserve_stack as _
+            ; call rax
+            ; mov stack_base, retval
         );
     }
 
@@ -82,7 +139,6 @@ pub fn emit(ops: &[StackOps]) {
             StackOps::Pop(count) => {
                 udon_dynasm!(assembler
                     ; sub stack_count, *count as _
-                    // TODO: check if negative, return HaltReason::StackUnderflow
                 );
             }
             StackOps::Extern {
@@ -105,7 +161,6 @@ pub fn emit(ops: &[StackOps]) {
                 let addr = *target as *const Il2CppObject;
                 udon_dynasm!(assembler
                     ; sub stack_count, count as _
-                    // TODO: check if count negative, return HaltReason::StackUnderflow
                     ; lea arg3, [stack_base + stack_count * 4]
                     /* Construct Span<u32> pointing to stack */
                     ; mov QWORD [span_ptr + 0x00], 0
@@ -116,6 +171,7 @@ pub fn emit(ops: &[StackOps]) {
                     ; mov arg2, heap_ptr
                     ; mov arg3, span_ptr
                     /* Invoke extern */
+                    // Extern(target, heap, arguments_span)
                     ; mov rax, QWORD *callback as _
                     ; call rax
                 );
@@ -132,26 +188,24 @@ pub fn emit(ops: &[StackOps]) {
                 } else {
                     udon_dynasm!(assembler
                         ; sub stack_count, 1
-                        // TODO: check if count negative, return HaltReason::StackUnderflow
                         ; mov arg2_32, DWORD [stack_base + stack_count * 4]
                     );
                 }
                 udon_dynasm!(assembler
                     ; mov arg1, heap_ptr
                     ; mov rax, QWORD UdonHeap::get_value::<bool> as _
+                    // UdonHeap::get_value(heap, slot_address)
                     ; call rax
 
-                    // get_value returns pointer
-                    // TODO: what is proper size to read here?
-                    ; mov eax, DWORD [retval]
-                    ; test eax, eax // set ZF
+                    ; test retval, retval // set ZF
                     ; jnz >skip_jmp
-                    // retval houses destination opcode
+                    // retval houses destination address
                     ; mov retval, DWORD *destination as _
+                    // TODO: save function pointer offset for future modification
                     ; mov rcx, QWORD vm_code_return as _
+                    // return destination
                     ; jmp rcx
                     ; skip_jmp:
-                    //; mov rsi, rdi // not sure what this was for...
                 );
             }
             StackOps::CopyComplete { src, dst } => {
@@ -160,26 +214,27 @@ pub fn emit(ops: &[StackOps]) {
                     ; mov arg2, DWORD *src as _
                     ; mov arg3, DWORD *dst as _
                     ; mov rax, QWORD UdonHeap::copy_variables as _
+                    // UdonHeap::copy_variables(heap, src, dst)
                     ; call rax
-                    //; mov rsi, rdi
                 );
             }
             StackOps::CopyIncomplete => {
                 udon_dynasm!(assembler
                     ; sub stack_count, 2
-                    // TODO: check if count negative, return HaltReason::StackUnderflow
                     ; mov arg1, heap_ptr
                     ; mov arg2, [stack_base + 0x0]
                     ; mov arg3, [stack_base + 0x4]
                     ; mov rax, QWORD UdonHeap::copy_variables as _
+                    // UdonHeap::copy_variables(heap, src, dst)
                     ; call rax
-                    //; mov rsi, rdi
                 );
             }
             StackOps::Jump(destination) => {
                 udon_dynasm!(assembler
                     ; mov retval, DWORD *destination as _
+                    // TODO: save function pointer offset for future modification
                     ; mov rcx, QWORD vm_code_return as _
+                    // return destination
                     ; jmp rcx
                 );
             }
@@ -190,16 +245,17 @@ pub fn emit(ops: &[StackOps]) {
                     ; mov rax, QWORD UdonHeap::get_value::<u32> as _
                     ; call rax
 
-                    // get_value returns pointer
-                    ; mov eax, DWORD [retval]
+                    // TODO: attempt to query for existing block before returning
                     ; mov rcx, QWORD vm_code_return as _
+                    // return indirect_destination
                     ; jmp rcx
                 );
             }
-            StackOps::Halt(reason) => {
+            StackOps::Return(reason) => {
                 udon_dynasm!(assembler
                     ; mov retval, QWORD reason.encode() as _
                     ; mov rcx, QWORD vm_code_return as _
+                    // return reason
                     ; jmp rcx
                 );
             }

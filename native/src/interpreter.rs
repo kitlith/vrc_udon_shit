@@ -100,7 +100,7 @@ impl InterpreterState {
                     let &jump_target = self.bytecode.get(self.pc / 4 + 1)?;
                     let cond_slot = self.stack.pop()?;
 
-                    if *self.heap.get_value(cond_slot) {
+                    if self.heap.get_value(cond_slot) {
                         self.pc += 8;
                     } else {
                         self.pc = jump_target as usize;
@@ -134,7 +134,7 @@ impl InterpreterState {
                 Some(OpCode::JumpIndirect) => {
                     // println!("OpCode::JumpIndirect");
                     let &address = self.bytecode.get(self.pc / 4 + 1)?;
-                    let jump_target: u32 = *self.heap.get_value(address);
+                    let jump_target: u32 = self.heap.get_value(address);
                     self.pc = jump_target as usize;
                 }
                 Some(OpCode::Copy) => {
