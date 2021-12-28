@@ -1,20 +1,8 @@
 use dynasmrt::{self, dynasm, DynasmApi, DynasmLabelApi, ExecutableBuffer};
 
 use crate::il2cpp_object::Il2CppObject;
-use crate::recompiler::{ExternArgs, StackOps, ReturnCode};
+use crate::recompiler::{ExternArgs, StackOps, ReturnCode, Context};
 use crate::udon_types::UdonHeap;
-
-struct Context {
-    stack: Vec<u32>,
-    // ...?
-}
-
-impl Context {
-    fn reserve_stack(&mut self, size: u64) -> *mut u32 {
-        self.stack.resize(size as usize, 0u32);
-        self.stack.as_mut_ptr()
-    }
-}
 
 extern "C" {
     // meant to be jumped to by jitted assembly!
@@ -27,15 +15,15 @@ macro_rules! udon_dynasm {
             ; .arch x64
             // RBX, RBP, RDI, RSI, RSP, R12-R15 are callee-saved registers.
             // ditch RBP and RSP since those mess with the stack/frame pointers
-            // remaining named registers are RBX, RDI, RSI
-            // am gonna use R12-R15 first, because i don't want to think about special purpose registers.
-            // let's leave rdi/rsi for rep movs copying.
+            // RBX is reserved by llvm
+            // remaining named registers are RDI, RSI
+            // am gonna use R12-R15 first, because i don't want to think about special purpose registers that much.
             // NOTE: we could always stuff a bunch of stuff in the context struct and not have it around persistantly.
             ; .alias heap_ptr, r12
             ; .alias stack_base, r13
             ; .alias stack_count, r14
             ; .alias span_ptr, r15
-            ; .alias context, rbx
+            ; .alias context, rsi
             // return code/return bytecode pc
             ; .alias retval, rax
             ; .alias retval_32, eax
@@ -135,6 +123,10 @@ pub fn emit(ops: &[StackOps]) -> ExecutableBuffer {
             ; mov stack_base, retval
         );
     }
+
+    // NOTE: we could probably choose to only update the stack at the end of the block
+    // and just keep track of the current stack offset instead of updating it with add/sub
+    // (ghidra shows the function as if we had chosen to do that, which is what reminded me.)
 
     for op in ops {
         match op {
