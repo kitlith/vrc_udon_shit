@@ -18,9 +18,10 @@ use libc::c_void;
 //     pub update_order: *const i32,
 // }
 
+#[repr(C)]
 pub struct UdonHeap {
     _obj: Il2CppObject,
-    _heap: *mut Il2CppArray<*const IStrongBox>,
+    heap: *mut Il2CppArray<*const IStrongBox>,
     _strong_box_of_type_cache: *const c_void,
     _strong_box_of_t_contained_type_cache: *const c_void,
 }
@@ -38,6 +39,9 @@ impl UdonHeap {
     }
     pub fn get_object<T>(&self, address: u32) -> &T {
         unsafe { self.get_variable(address).cast() }
+    }
+    pub fn size(&self) -> usize {
+        unsafe { (*self.heap).len() }
     }
     // pub fn set_raw(&mut self, address: u32, value: *const c_void) {
     //     unsafe { (*self.heap)[address as usize] = value as *const IStrongBox };

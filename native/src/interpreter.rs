@@ -34,7 +34,7 @@ pub enum OpCode {
     CachedExtern = 10,
 }
 
-static mut WRAPPER: *const IUdonWrapper = 0 as *const IUdonWrapper;
+pub static mut WRAPPER: *const IUdonWrapper = 0 as *const IUdonWrapper;
 static mut TIME_SOURCE: *const UdonVMTimeSource = 0 as *const UdonVMTimeSource;
 
 #[no_mangle]
@@ -54,7 +54,7 @@ impl InterpreterState {
             return None;
         }
 
-        let bytes = unsafe { array.as_slice() };
+        let bytes = array.as_slice();
         let bytecode: Vec<u32> = bytes
             .chunks_exact(4)
             .map(|chunk| u32::from_be_bytes(chunk.try_into().unwrap()))
@@ -148,7 +148,6 @@ impl InterpreterState {
                     // println!("OpCode::CachedExtern");
                     let &address = self.bytecode.get(self.pc / 4 + 1)?;
                     let &(method, target, parameter_count) = self.extern_cache.get(&address)?;
-                    // let &(method, target, parameter_count) = unsafe { &*(self.heap.get_raw(address) as *const _) };
                     self.invoke(method, target, parameter_count);
                     self.pc += 8;
                 }
@@ -165,16 +164,9 @@ impl InterpreterState {
     fn invoke(&mut self, method: UdonWrapperCallbackType, target: &Il2CppObject, parameter_count: i32) {
         let start = self.stack.len() - parameter_count as usize;
         let slice = &self.stack[start..];
-        // println!("span {:?}", slice);
-        // let span = Span::make_fake_from_slice(slice);
-        // self.span.point_to(slice);
-        // println!("span len: {}, {}", self.span.len(), unsafe { self.span.as_slice::<u32>()[0] });
-        // let span = unsafe { &*((self.span as *const Span as usize + 16) as *const Span) };
         let span = Span::new(slice);
         method(target, self.heap, &span);
-        // println!("done");
         self.stack.truncate(start);
-        // println!("done!!");
     }
 
     pub fn set_pc(&mut self, pc: usize) -> Option<()> {

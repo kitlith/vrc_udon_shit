@@ -29,11 +29,11 @@ internal static class NativeInterpreterApi {
 
             SetFunctionPointers = GetPointer<SetFunctionPointersDelegate>(lib, "set_function_pointers");
             SetWrapperAndTimeSource = GetPointer<SetWrapperAndTimeSourceDelegate>(lib, "set_wrapper_and_time_source");
-            LoadProgram = GetPointer<LoadProgramDelegate>(lib, "load_program");
-            Interpret = GetPointer<InterpretDelegate>(lib, "interpret");
-            SetProgramCounter = GetPointer<SetProgramCounterDelegate>(lib, "set_program_counter");
-            GetProgramCounter = GetPointer<GetProgramCounterDelegate>(lib, "get_program_counter");
-            Dispose = GetPointer<DisposeDelegate>(lib, "dispose");
+            LoadProgram = GetPointer<LoadProgramDelegate>(lib, "dynarec_load_program");
+            Interpret = GetPointer<InterpretDelegate>(lib, "dynarec_interpret");
+            SetProgramCounter = GetPointer<SetProgramCounterDelegate>(lib, "dynarec_set_program_counter");
+            GetProgramCounter = GetPointer<GetProgramCounterDelegate>(lib, "dynarec_get_program_counter");
+            Dispose = GetPointer<DisposeDelegate>(lib, "dynarec_dispose");
 
             static IntPtr GetFunctionPointer(Type type, string name) {
                 var methodInfoPtr = (IntPtr)type.GetField(name, BindingFlags.Static | BindingFlags.NonPublic).GetValue(null);

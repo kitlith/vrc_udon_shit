@@ -1,6 +1,9 @@
-// use crate::il2cpp_object::Il2CppObject;
+use crate::il2cpp_object::Il2CppObject;
 
-pub struct IStrongBox;
+#[repr(C)]
+pub struct IStrongBox {
+    _obj: Il2CppObject,
+}
 
 // impl IStrongBox {
 //     pub fn get_value<T>(&self) -> T {

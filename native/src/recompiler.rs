@@ -4,16 +4,26 @@ use num_traits::FromPrimitive;
 use crate::interpreter::OpCode;
 use crate::il2cpp_object::Il2CppObject;
 use crate::il2cpp_string::Il2CppString;
+use crate::span::Span;
 use crate::udon_types::{UdonHeap, UdonWrapperCallbackType, IUdonWrapper};
 
+#[repr(C)]
 pub struct Context {
-    heap_ptr: *const core::ffi::c_void, // r12 / x19
+    heap_ptr: *mut UdonHeap, // r12 / x19
     stack: Vec<u32>,
     stack_count: u64,
-    span: crate::span::Span<'static, u32>,
+    span: crate::span::Span<u32>,
 }
 
 impl Context {
+    pub fn new(heap: *mut UdonHeap) -> Self {
+        Self {
+            heap_ptr: heap,
+            stack: Vec::with_capacity(0x1000),
+            stack_count: 0,
+            span: Span::<u32>::new(&[]),
+        }
+    }
     pub fn reserve_stack(&mut self, size: u64) -> *mut u32 {
         if size as usize > self.stack.len() {
             self.stack.resize(size as usize, 0u32);

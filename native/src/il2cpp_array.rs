@@ -20,8 +20,8 @@ struct Il2CppArrayBounds {
 }
 
 impl<T> Il2CppArray<T> {
-    pub unsafe fn as_slice(&self) -> &[T] {
-        slice::from_raw_parts(self.start(), self.len())
+    pub fn as_slice(&self) -> &[T] {
+        unsafe { slice::from_raw_parts(self.start(), self.len()) }
     }
     // pub unsafe fn as_mut_slice(&mut self) -> &mut [T] {
     //     slice::from_raw_parts_mut(self.start_mut(), self.len())
