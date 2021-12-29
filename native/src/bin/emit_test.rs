@@ -1,5 +1,5 @@
-use native::emit::emit;
-use native::recompiler::{ExternArgs, StackOps, ReturnCode};
+use native::vm::emit::emit;
+use native::vm::analysis::{ExternArgs, StackOps, ReturnCode};
 
 fn main() {
 

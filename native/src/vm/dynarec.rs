@@ -1,9 +1,9 @@
 use dynasmrt::ExecutableBuffer;
 use rustc_hash::FxHashMap;
 
-use crate::emit::emit;
-use crate::interpreter::WRAPPER;
-use crate::recompiler::{analyze_block_stack, Context, ReturnCode};
+use super::emit::{emit, Context};
+use super::interpreter::WRAPPER;
+use super::analysis::{analyze_block_stack, ReturnCode};
 use crate::udon_types::UdonHeap;
 use crate::il2cpp_array::Il2CppArray;
 
@@ -17,6 +17,8 @@ pub struct Dynarec {
 }
 
 extern "C" {
+    // our generated code doesn't actually touch the struct, it treats it like an opaque pointer.
+    #[allow(improper_ctypes)]
     fn wrap_vm_exception_unknown(
         code_ptr: *const u8,
         state: &mut Context,
@@ -103,7 +105,7 @@ impl Dynarec {
                 }
                 ReturnCode::RequestInterpreter(pc) => {
                     println!("old pc: {}, new pc: {}", self.pc, pc);
-                    self.pc = pc;
+                    // self.pc = pc; // we don't actually emit the correct pc at the moment! but it doesn't matter, either.
 
                     println!("dumping blocks");
                     for (pc, block) in self.block_cache.iter() {

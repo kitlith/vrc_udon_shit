@@ -10,7 +10,5 @@ mod delegate;
 mod strongbox;
 mod span;
 mod udon_types;
-mod interpreter;
-pub mod dynarec;
-pub mod recompiler;
-pub mod emit;
+
+pub mod vm;

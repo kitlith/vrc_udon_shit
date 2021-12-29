@@ -6,7 +6,8 @@ use crate::udon_types::{
     IUdonWrapper, UdonHeap, UdonVMTimeSource, UdonWrapperCallbackType,
 };
 
-use num_derive::FromPrimitive;
+use super::OpCode;
+
 use num_traits::FromPrimitive;
 use rustc_hash::FxHashMap;
 
@@ -18,20 +19,6 @@ pub struct InterpreterState {
     bytecode: Vec<u32>,
     heap: &'static mut UdonHeap,
     extern_cache: FxHashMap<u32, (UdonWrapperCallbackType, &'static Il2CppObject, i32)>,
-}
-
-#[derive(FromPrimitive)]
-pub enum OpCode {
-    Nop = 0,
-    Push = 1,
-    Pop = 2,
-    JumpIfFalse = 4,
-    Jump = 5,
-    Extern = 6,
-    Annotation = 7,
-    JumpIndirect = 8,
-    Copy = 9,
-    CachedExtern = 10,
 }
 
 pub static mut WRAPPER: *const IUdonWrapper = 0 as *const IUdonWrapper;

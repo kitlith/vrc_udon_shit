@@ -1,96 +1,10 @@
-use core::arch::asm;
+
 use num_traits::FromPrimitive;
 
-use crate::interpreter::OpCode;
+use super::OpCode;
 use crate::il2cpp_object::Il2CppObject;
 use crate::il2cpp_string::Il2CppString;
-use crate::span::Span;
 use crate::udon_types::{UdonHeap, UdonWrapperCallbackType, IUdonWrapper};
-
-#[repr(C)]
-pub struct Context {
-    heap_ptr: *mut UdonHeap, // r12 / x19
-    stack: Vec<u32>,
-    stack_count: u64,
-    span: crate::span::Span<u32>,
-}
-
-impl Context {
-    pub fn new(heap: *mut UdonHeap) -> Self {
-        Self {
-            heap_ptr: heap,
-            stack: Vec::with_capacity(0x1000),
-            stack_count: 0,
-            span: Span::<u32>::new(&[]),
-        }
-    }
-    pub fn reserve_stack(&mut self, size: u64) -> *mut u32 {
-        if size as usize > self.stack.len() {
-            self.stack.resize(size as usize, 0u32);
-        }
-        self.stack.as_mut_ptr()
-    }
-    pub fn set_stack_count(&mut self, val: u64) {
-        self.stack_count = val;
-    }
-    pub fn get_stack_count(&self) -> u64 {
-        self.stack_count
-    }
-}
-
-// NOTE: This has undefined behaviour! C++ exceptions are not supposed to unwind through rust functions.
-// this seems to work anyway on windows? so why the fuck not.
-#[no_mangle]
-#[inline(never)] // we use a named label, cannot allow it to conflict.
-#[allow(named_asm_labels)]
-pub extern "C" fn call_vm_code(code_ptr: *const core::ffi::c_void, context: &mut Context) -> u64 {
-    let ret: u64;
-
-    #[cfg(target_arch = "x86_64")]
-    unsafe {
-        // our generated code should not touch the stack except for making function calls.
-        // essentially, a fancy function body that isn't in the same place as the rest of the body.
-        asm!(
-            "jmp rcx",
-            ".global vm_code_return",
-            // TODO: consider using a local label, and putting its address in a register?
-            "vm_code_return:",
-            // we don't really care which register this goes in
-            // but as the first arg it should already be in rcx
-            inout("rcx") code_ptr => _,
-            // heap pointer shouldn't change
-            in("r12") context.heap_ptr,
-            // stack pointer comes from vec, not controlled by the vm, but it does get updated in the vm
-            inout("r13") context.stack.as_mut_ptr() => _,
-            // we do want to keep track of what the vm does with this
-            inout("r14") context.stack_count,
-            in("r15") &context.span,
-            in("rsi") context,
-            out("rax") ret,
-            // TODO: just specify system, as that's what it'll be on windows anyway?
-            clobber_abi("win64"),
-        );
-    }
-
-    #[cfg(target_arch = "aarch64")]
-    unsafe {
-        asm!(
-            "b x0",
-            ".global vm_code_return",
-            "vm_code_return:",
-            // don't really care, but first argument/result already happens to be here
-            inout("x0") code_ptr => ret,
-            in("x19") context.heap_ptr,
-            inout("x20") context.stack.as_mut_ptr() => _,
-            inout("x21") context.stack_count,
-            in("x22") &context.span,
-            in("x23") context
-            clobber_abi("system")
-        );
-    }
-    // lower 32 bits should be bytecode PC, upper 32 bits should signal if there's an error/exception
-    ret
-}
 
 #[derive(Debug, Clone)]
 pub enum ExternArgs {
