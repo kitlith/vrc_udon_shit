@@ -30,6 +30,12 @@ impl Context {
         }
         self.stack.as_mut_ptr()
     }
+    pub fn set_stack_count(&mut self, val: u64) {
+        self.stack_count = val;
+    }
+    pub fn get_stack_count(&self) -> u64 {
+        self.stack_count
+    }
 }
 
 // NOTE: This has undefined behaviour! C++ exceptions are not supposed to unwind through rust functions.
@@ -130,8 +136,8 @@ impl ReturnCode {
             0x80000000 => ReturnCode::RequestInterpreter(val as u32),
             0x00000001 => ReturnCode::MissingArgument,
             0x00000002 => ReturnCode::UnknownOpCode(val as u32),
-            //0x00000003 => ReturnCode::StackUnderflow,
-            unk => ReturnCode::UnknownReturn(unk),
+            0x00000003 => ReturnCode::StackUnderflow,
+            _ => ReturnCode::UnknownReturn(val),
         }
     }
 }

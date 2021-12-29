@@ -158,6 +158,13 @@ pub fn emit(ops: &[StackOps]) -> ExecutableBuffer {
                 let addr = *target as *const Il2CppObject;
                 udon_dynasm!(assembler
                     ; sub stack_count, count as _
+
+                    // TODO: is this necessary? potential workaround for some stack underflow bug.
+                    ; mov arg1, context
+                    ; mov arg2, stack_count
+                    ; mov rax, QWORD Context::set_stack_count as _
+                    ; call rax
+
                     ; lea arg3, [stack_base + stack_count * 4]
                     /* Construct Span<u32> pointing to stack */
                     ; mov QWORD [span_ptr + 0x00], 0
@@ -170,6 +177,18 @@ pub fn emit(ops: &[StackOps]) -> ExecutableBuffer {
                     /* Invoke extern */
                     // Extern(target, heap, arguments_span)
                     ; mov rax, QWORD *callback as _
+                    ; call rax
+
+                    // TODO: is this necessary? potential workaround for some stack underflow bug.
+                    ; mov arg1, context
+                    ; mov rax, QWORD Context::get_stack_count as _
+                    ; call rax
+
+                    ; mov stack_count, retval
+
+                    ; mov arg1, context
+                    ; xor arg2, arg2 // arg2 = 0
+                    ; mov rax, QWORD Context::reserve_stack as _
                     ; call rax
                 );
             }

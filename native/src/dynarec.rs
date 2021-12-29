@@ -3,7 +3,7 @@ use rustc_hash::FxHashMap;
 
 use crate::emit::emit;
 use crate::interpreter::WRAPPER;
-use crate::recompiler::{analyze_block_stack, Context};
+use crate::recompiler::{analyze_block_stack, Context, ReturnCode};
 use crate::udon_types::UdonHeap;
 use crate::il2cpp_array::Il2CppArray;
 
@@ -80,21 +80,42 @@ impl Dynarec {
     }
 
     pub fn interpret(&mut self) -> bool {
-        if let Some(block) = self.block_cache.get(&self.pc) {
-            let rc = unsafe { wrap_vm_exception_unknown(
+        loop {
+            let block = self.block_cache.entry(self.pc)
+                .or_insert_with(|| {
+                    let stack_ops = analyze_block_stack(&self.bytecode, self.heap, self.pc as usize, unsafe { WRAPPER });
+                    let block = emit(&stack_ops);
+                    block
+                });
+            
+            let rc = ReturnCode::decode(unsafe { wrap_vm_exception_unknown(
                 block.as_ptr(),
                 &mut self.state
-            ) };
-            return rc != 0xFFFFFFFFFFFFFFFF;
-        } else {
-            let stack_ops = analyze_block_stack(&self.bytecode, self.heap, self.pc as usize, unsafe { WRAPPER });
-            let block = emit(&stack_ops);
-            let rc = unsafe { wrap_vm_exception_unknown(
-                block.as_ptr(),
-                &mut self.state
-            ) };
-            self.block_cache.insert(self.pc, block);
-            return rc != 0xFFFFFFFFFFFFFFFF;
+            ) });
+            
+            match rc {
+                ReturnCode::Continue(pc) => {
+                    self.pc = pc;
+                    if (pc / 4) as usize >= self.bytecode.len() {
+                        return true;
+                    }
+                    continue;
+                }
+                ReturnCode::RequestInterpreter(pc) => {
+                    println!("old pc: {}, new pc: {}", self.pc, pc);
+                    self.pc = pc;
+
+                    println!("dumping blocks");
+                    for (pc, block) in self.block_cache.iter() {
+                        std::fs::write(format!("block_{:x}.bin", pc), block.as_ref()).unwrap();
+                    }
+                    unimplemented!();
+                }
+                ReturnCode::MissingArgument => return false,
+                ReturnCode::UnknownOpCode(_op) => return false,
+                ReturnCode::StackUnderflow => return false,
+                ReturnCode::UnknownReturn(_ret) => return false,
+            }
         }
     }
 }
