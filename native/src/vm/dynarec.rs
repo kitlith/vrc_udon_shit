@@ -3,7 +3,7 @@ use rustc_hash::FxHashMap;
 
 use super::emit::{emit, Context};
 use super::interpreter::WRAPPER;
-use super::analysis::{analyze_block_stack, ReturnCode};
+use super::analysis::{analyze_block_stack, ReturnCode, StackOps};
 use crate::udon_types::UdonHeap;
 use crate::il2cpp_array::Il2CppArray;
 
@@ -36,38 +36,51 @@ impl Dynarec {
             .map(|chunk| u32::from_be_bytes(chunk.try_into().unwrap()))
             .collect();
 
-        /*
-        let mut iter = bytecode.iter();
-        let mut address = 0;
-        while let Some(&opcode) = iter.next() {
-            match FromPrimitive::from_u32(opcode) {
-                Some(OpCode::Nop | OpCode::Pop | OpCode::Copy) => {
-                    address += 4;
-                }
-                Some(OpCode::Push) => {
-                    let &address = iter.next()?;
-                    let (low, high) = pushed_variables[address as usize];
-                    let (low, high) = (low.min(address), high.max(address));
-                    pushed_variables[address as usize] = (low, high);
-                    address += 8;
-                }
-                Some(
-                    OpCode::JumpIfFalse
-                    | OpCode::Jump
-                    | OpCode::Extern
-                    | OpCode::Annotation
-                    | OpCode::JumpIndirect
-                    | OpCode::CachedExtern,
-                ) => {
-                    address += 8;
-                }
-                None => {
-                    println!("Unknown opcode: {}", opcode);
+        let mut jump_targets = Vec::<u32>::new();
+        let mut block_cache = FxHashMap::default();
+
+        let mut pc = 0usize;
+        while pc / 4 < bytecode.len() {
+            let start_pc = pc;
+            let stack_ops = analyze_block_stack(&bytecode, heap, &mut pc, unsafe { WRAPPER });
+
+            match stack_ops.last() {
+                Some(StackOps::Return(ReturnCode::Continue(_))) => {}
+                Some(StackOps::Return(reason)) => {
+                    println!("Error parsing bytecode: {:?}", reason);
                     return None;
                 }
+                _ => {}
             }
+
+            for op in stack_ops.iter() {
+                match op {
+                    StackOps::Jump(destination) => Some(*destination as u32),
+                    StackOps::JumpIfFalse { destination, .. } => Some(*destination),
+                    _ => None,
+                }.map(|dest| if !block_cache.contains_key(&dest) { jump_targets.push(dest); });
+            }
+
+            block_cache.insert(start_pc as u32, emit(&stack_ops));
         }
-        */
+
+        while let Some(destination) = jump_targets.pop() {
+            if block_cache.contains_key(&destination) {
+                continue;
+            }
+
+            let mut pc = destination as usize;
+            let stack_ops = analyze_block_stack(&bytecode, heap, &mut pc, unsafe { WRAPPER });
+            for op in stack_ops.iter() {
+                match op {
+                    StackOps::Jump(destination) => Some(*destination as u32),
+                    StackOps::JumpIfFalse { destination, .. } => Some(*destination),
+                    _ => None,
+                }.map(|dest| if !block_cache.contains_key(&dest) { jump_targets.push(dest); });
+            }
+
+            block_cache.insert(destination as u32, emit(&stack_ops));
+        }
 
         let state = Context::new(heap as *mut UdonHeap);
 
@@ -76,7 +89,7 @@ impl Dynarec {
             bytecode,
             pc: 0,
             // pushed_variables,
-            block_cache: FxHashMap::default(),
+            block_cache,
             state: state,
         })
     }
@@ -85,7 +98,8 @@ impl Dynarec {
         loop {
             let block = self.block_cache.entry(self.pc)
                 .or_insert_with(|| {
-                    let stack_ops = analyze_block_stack(&self.bytecode, self.heap, self.pc as usize, unsafe { WRAPPER });
+                    let mut end_pc = self.pc as usize;
+                    let stack_ops = analyze_block_stack(&self.bytecode, self.heap, &mut end_pc, unsafe { WRAPPER });
                     let block = emit(&stack_ops);
                     block
                 });

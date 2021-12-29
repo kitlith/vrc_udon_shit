@@ -85,9 +85,11 @@ pub enum StackOps {
     Return(ReturnCode),
 }
 
-pub fn analyze_block_stack(bytecode: &[u32], heap: &UdonHeap, mut pc: usize, wrapper: *const IUdonWrapper) -> Vec<StackOps> {
+pub fn analyze_block_stack(bytecode: &[u32], heap: &UdonHeap, ext_pc: &mut usize, wrapper: *const IUdonWrapper) -> Vec<StackOps> {
     let mut stack = Vec::<u32>::new();
     let mut ops = Vec::<StackOps>::new();
+
+    let mut pc = *ext_pc;
 
     fn flush_stack(stack: &mut Vec<u32>, ops: &mut Vec<StackOps>) {
         if stack.len() != 0 {
@@ -128,6 +130,7 @@ pub fn analyze_block_stack(bytecode: &[u32], heap: &UdonHeap, mut pc: usize, wra
                 pc += 4;
             }
             Some(OpCode::JumpIfFalse) => {
+                // TODO: do we want to avoid flushing stack here, and instead set it up to only push stack if the branch is taken?
                 flush_stack(&mut stack, &mut ops);
 
                 ops.push(StackOps::JumpIfFalse {
@@ -140,6 +143,8 @@ pub fn analyze_block_stack(bytecode: &[u32], heap: &UdonHeap, mut pc: usize, wra
             Some(OpCode::Jump) => {
                 // TODO: detect jump past end of bytecode/to 0xFFFFFFFF as halt?
                 let dest = get_or_halt!((pc >> 2) + 1) as usize;
+
+                pc += 8;
 
                 // ends the block
                 break if dest == 0xFFFFFFFF || dest == 0xFFFFFFFC {
@@ -172,6 +177,7 @@ pub fn analyze_block_stack(bytecode: &[u32], heap: &UdonHeap, mut pc: usize, wra
             }
             Some(OpCode::JumpIndirect) => {
                 let heap_slot = get_or_halt!((pc >> 2) + 1);
+                pc += 8;
                 break StackOps::JumpIndirect(heap_slot); // ends the block
             }
             Some(OpCode::Copy) => {
@@ -211,6 +217,8 @@ pub fn analyze_block_stack(bytecode: &[u32], heap: &UdonHeap, mut pc: usize, wra
     flush_stack(&mut stack, &mut ops);
 
     ops.push(terminating_op);
+
+    *ext_pc = pc;
 
     //println!("ops: {:?}", ops);
 
