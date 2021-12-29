@@ -128,6 +128,8 @@ pub fn analyze_block_stack(bytecode: &[u32], heap: &UdonHeap, mut pc: usize, wra
                 pc += 4;
             }
             Some(OpCode::JumpIfFalse) => {
+                flush_stack(&mut stack, &mut ops);
+
                 ops.push(StackOps::JumpIfFalse {
                     destination: get_or_halt!((pc >> 2) + 1),
                     arg: stack.pop()
