@@ -15,6 +15,8 @@ namespace vrc_udon_shit {
         public static MelonLogger.Instance logger;
 
         public override void OnApplicationStart() {
+            logger = LoggerInstance;
+
             var dllName = "native.dll";
             var dstPath = "VRChat_Data/Plugins/" + dllName;
 
@@ -35,7 +37,6 @@ namespace vrc_udon_shit {
                 return;
             }
 
-            logger = LoggerInstance;
             RegisterTypeInIl2CppWithInterfaces<UdonVMDynarec>(true, typeof(IUdonVM));
             if (Stopwatch.IsHighResolution)
             {
