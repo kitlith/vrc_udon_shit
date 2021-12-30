@@ -1,10 +1,9 @@
-
 use num_traits::FromPrimitive;
 
 use super::OpCode;
 use crate::il2cpp_object::Il2CppObject;
 use crate::il2cpp_string::Il2CppString;
-use crate::udon_types::{UdonHeap, UdonWrapperCallbackType, IUdonWrapper};
+use crate::udon_types::{IUdonWrapper, UdonHeap, UdonWrapperCallbackType};
 
 #[derive(Debug, Clone)]
 pub enum ExternArgs {
@@ -16,7 +15,7 @@ impl ExternArgs {
     pub fn len(&self) -> usize {
         match self {
             ExternArgs::Complete(a) => a.len(),
-            ExternArgs::Incomplete(c) => *c
+            ExternArgs::Incomplete(c) => *c,
         }
     }
 }
@@ -26,10 +25,10 @@ pub enum ReturnCode {
     // semantics of Continue are: detect if should halt, find next block, compile next block if necessary.
     Continue(u32),
     RequestInterpreter(u32), // NOTE: currently only used for stack underflow condition.
-    MissingArgument, // ERROR: Unexpected EOF in middle of instruction
-    UnknownOpCode(u32), // ERROR: Unknown opcode {this.0}
-    StackUnderflow, // ERROR: tried to pop item when stack was empty!
-    UnknownReturn(u64)
+    MissingArgument,         // ERROR: Unexpected EOF in middle of instruction
+    UnknownOpCode(u32),      // ERROR: Unknown opcode {this.0}
+    StackUnderflow,          // ERROR: tried to pop item when stack was empty!
+    UnknownReturn(u64),
 }
 
 impl ReturnCode {
@@ -65,16 +64,16 @@ pub enum StackOps {
         target: &'static Il2CppObject,
         // keep track of the original index in case we need to invalidate the block.
         heap_slot: u32,
-        args: ExternArgs
+        args: ExternArgs,
     },
-    // can be implemented as a return, 
+    // can be implemented as a return,
     JumpIfFalse {
         destination: u32,
-        arg: Option<u32>
+        arg: Option<u32>,
     },
     CopyComplete {
         src: u32,
-        dst: u32
+        dst: u32,
     },
     CopyIncomplete,
     // can be implemented as a return, possible optimization is to jump directly to next block
@@ -85,7 +84,12 @@ pub enum StackOps {
     Return(ReturnCode),
 }
 
-pub fn analyze_block_stack(bytecode: &[u32], heap: &UdonHeap, ext_pc: &mut usize, wrapper: *const IUdonWrapper) -> Vec<StackOps> {
+pub fn analyze_block_stack(
+    bytecode: &[u32],
+    heap: &UdonHeap,
+    ext_pc: &mut usize,
+    wrapper: *const IUdonWrapper,
+) -> Vec<StackOps> {
     let mut stack = Vec::<u32>::new();
     let mut ops = Vec::<StackOps>::new();
 
@@ -107,13 +111,19 @@ pub fn analyze_block_stack(bytecode: &[u32], heap: &UdonHeap, ext_pc: &mut usize
                     break StackOps::Return($reason);
                 }
             };
-            ($index:expr) => { get_or_halt!($index, ReturnCode::MissingArgument) };
+            ($index:expr) => {
+                get_or_halt!($index, ReturnCode::MissingArgument)
+            };
         }
         let opcode = get_or_halt!(pc >> 2, ReturnCode::Continue(pc as u32));
 
         match FromPrimitive::from_u32(opcode) {
-            Some(OpCode::Nop) => { pc += 4; }
-            Some(OpCode::Annotation) => { pc += 8; }
+            Some(OpCode::Nop) => {
+                pc += 4;
+            }
+            Some(OpCode::Annotation) => {
+                pc += 8;
+            }
             Some(OpCode::Push) => {
                 let heap_slot = get_or_halt!((pc >> 2) + 1);
                 stack.push(heap_slot);
@@ -135,9 +145,9 @@ pub fn analyze_block_stack(bytecode: &[u32], heap: &UdonHeap, ext_pc: &mut usize
 
                 ops.push(StackOps::JumpIfFalse {
                     destination: get_or_halt!((pc >> 2) + 1),
-                    arg: stack.pop()
+                    arg: stack.pop(),
                 });
-                
+
                 pc += 8;
             }
             Some(OpCode::Jump) => {
@@ -157,18 +167,19 @@ pub fn analyze_block_stack(bytecode: &[u32], heap: &UdonHeap, ext_pc: &mut usize
                 let heap_slot = get_or_halt!((pc >> 2) + 1);
                 let signature: &Il2CppString = (*heap).get_object(heap_slot);
                 let method = unsafe { (*wrapper).get_extern_function_delegate(signature) };
-                let parameter_count = unsafe { (*wrapper).get_extern_function_parameter_count(signature) as usize };
+                let parameter_count =
+                    unsafe { (*wrapper).get_extern_function_parameter_count(signature) as usize };
 
                 let op = StackOps::Extern {
                     callback: method.method_ptr,
                     target: method.m_target,
                     heap_slot,
                     args: if stack.len() >= parameter_count {
-                        ExternArgs::Complete(stack.split_off(stack.len()-parameter_count))
+                        ExternArgs::Complete(stack.split_off(stack.len() - parameter_count))
                     } else {
                         flush_stack(&mut stack, &mut ops);
                         ExternArgs::Incomplete(parameter_count)
-                    }
+                    },
                 };
 
                 ops.push(op);
@@ -208,9 +219,9 @@ pub fn analyze_block_stack(bytecode: &[u32], heap: &UdonHeap, ext_pc: &mut usize
 
                 pc += 8;
             }
-            None => { 
+            None => {
                 break StackOps::Return(ReturnCode::UnknownOpCode(opcode));
-            },
+            }
         }
     };
 

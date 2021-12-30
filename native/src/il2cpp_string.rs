@@ -14,12 +14,7 @@ impl Il2CppString {
         self._length as usize
     }
     pub fn as_slice(&self) -> &[u16] {
-        unsafe {
-            std::slice::from_raw_parts(
-                &self._chars as *const u16,
-                self.len(),
-            )
-        }
+        unsafe { std::slice::from_raw_parts(&self._chars as *const u16, self.len()) }
     }
     pub fn to_string(&self) -> String {
         String::from_utf16_lossy(self.as_slice())

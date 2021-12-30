@@ -56,7 +56,10 @@ pub struct IUdonWrapper {
 }
 
 impl IUdonWrapper {
-    pub fn get_extern_function_delegate(&self, signature: &Il2CppString) -> &Delegate<UdonWrapperCallbackType> {
+    pub fn get_extern_function_delegate(
+        &self,
+        signature: &Il2CppString,
+    ) -> &Delegate<UdonWrapperCallbackType> {
         unsafe { ((*CALLBACKS).get_extern_function_delegate)(self, signature) }
     }
     pub fn get_extern_function_parameter_count(&self, signature: &Il2CppString) -> i32 {
@@ -75,8 +78,11 @@ pub type UdonWrapperCallbackType = extern "C" fn(&Il2CppObject, &mut UdonHeap, &
 pub struct CallbackTable {
     pub get_variable: extern "C" fn(heap: &UdonHeap, address: u32) -> &Il2CppObject,
     pub copy_variables: extern "C" fn(heap: &mut UdonHeap, src: u32, dst: u32),
-    pub get_extern_function_delegate:
-        extern "C" fn(wrapper: &IUdonWrapper, signature: &Il2CppString) -> &'static Delegate<UdonWrapperCallbackType>,
+    pub get_extern_function_delegate: extern "C" fn(
+        wrapper: &IUdonWrapper,
+        signature: &Il2CppString,
+    )
+        -> &'static Delegate<UdonWrapperCallbackType>,
     pub get_extern_function_parameter_count:
         extern "C" fn(wrapper: &IUdonWrapper, signature: &Il2CppString) -> i32,
 }

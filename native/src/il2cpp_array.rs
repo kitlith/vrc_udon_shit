@@ -1,6 +1,6 @@
 use crate::il2cpp_object::Il2CppObject;
 
-use std::{slice, ops};
+use std::{ops, slice};
 
 #[repr(C)]
 pub struct Il2CppArray<T> {

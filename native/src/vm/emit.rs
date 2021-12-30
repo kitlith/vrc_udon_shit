@@ -1,11 +1,12 @@
-use dynasmrt::{self, dynasm, DynasmApi, DynasmLabelApi, ExecutableBuffer};
+use dynasmrt::{self, dynasm, DynamicLabel, DynasmApi, DynasmLabelApi};
+use rustc_hash::FxHashMap;
 
 use core::arch::asm;
 
+use super::analysis::{ExternArgs, ReturnCode, StackOps};
 use crate::il2cpp_object::Il2CppObject;
-use super::analysis::{ExternArgs, StackOps, ReturnCode};
-use crate::udon_types::UdonHeap;
 use crate::span::Span;
+use crate::udon_types::UdonHeap;
 
 extern "C" {
     // meant to be jumped to by jitted assembly!
@@ -129,9 +130,11 @@ pub extern "C" fn call_vm_code(code_ptr: *const core::ffi::c_void, context: &mut
     ret
 }
 
-pub fn emit(ops: &[StackOps]) -> ExecutableBuffer {
-    let mut assembler = dynasmrt::x64::Assembler::new().unwrap();
-
+pub fn emit(
+    assembler: &mut dynasmrt::x64::Assembler,
+    ops: &[StackOps],
+    jump_table: &FxHashMap<u32, DynamicLabel>,
+) {
     fn push_n(assembler: &mut dynasmrt::x64::Assembler, params: &[u32]) {
         for (offset, &value) in params.iter().enumerate() {
             udon_dynasm!(assembler
@@ -169,7 +172,7 @@ pub fn emit(ops: &[StackOps]) -> ExecutableBuffer {
                 StackOps::JumpIfFalse { arg: None, .. } => {
                     cur_stack -= 1;
                 }
-                StackOps::CopyComplete {..} => continue,
+                StackOps::CopyComplete { .. } => continue,
                 StackOps::CopyIncomplete => {
                     cur_stack -= 2;
                 }
@@ -179,7 +182,7 @@ pub fn emit(ops: &[StackOps]) -> ExecutableBuffer {
             min_stack = std::cmp::min(min_stack, cur_stack);
         }
     }
-    
+
     // i.e.: there are incomplete operations
     if min_stack < 0 {
         udon_dynasm!(assembler
@@ -218,7 +221,7 @@ pub fn emit(ops: &[StackOps]) -> ExecutableBuffer {
     for op in ops {
         match op {
             StackOps::Push(params) => {
-                push_n(&mut assembler, &params);
+                push_n(assembler, &params);
             }
             StackOps::Pop(count) => {
                 udon_dynasm!(assembler
@@ -229,12 +232,12 @@ pub fn emit(ops: &[StackOps]) -> ExecutableBuffer {
                 callback,
                 target,
                 heap_slot: _,
-                args
+                args,
             } => {
                 let count = match &args {
                     ExternArgs::Complete(params) => {
                         // TODO: allocate a complete slice somewhere that we can embed a pointer to
-                        push_n(&mut assembler, params);
+                        push_n(assembler, params);
                         params.len()
                     }
                     ExternArgs::Incomplete(count) => {
@@ -257,7 +260,7 @@ pub fn emit(ops: &[StackOps]) -> ExecutableBuffer {
                     ; mov QWORD [span_ptr + 0x00], 0
                     ; mov QWORD [span_ptr + 0x08], arg3
                     ; mov DWORD [span_ptr + 0x10], count as _
-                    
+
                     ; mov arg1, QWORD addr as _
                     ; mov arg2, heap_ptr
                     ; mov arg3, span_ptr
@@ -279,10 +282,7 @@ pub fn emit(ops: &[StackOps]) -> ExecutableBuffer {
                     ; call rax
                 );
             }
-            StackOps::JumpIfFalse {
-                destination,
-                arg,
-            } => {
+            StackOps::JumpIfFalse { destination, arg } => {
                 /* Load bool flag from heap */
                 if let Some(address) = arg {
                     udon_dynasm!(assembler
@@ -294,6 +294,7 @@ pub fn emit(ops: &[StackOps]) -> ExecutableBuffer {
                         ; mov arg2_32, DWORD [stack_base + stack_count * 4]
                     );
                 }
+                let jump_target = jump_table[destination];
                 udon_dynasm!(assembler
                     ; mov arg1, heap_ptr
                     ; mov rax, QWORD UdonHeap::get_value::<bool> as _
@@ -302,12 +303,7 @@ pub fn emit(ops: &[StackOps]) -> ExecutableBuffer {
 
                     ; test retval_8, retval_8 // set ZF
                     ; jnz >skip_jmp
-                    // retval houses destination address
-                    ; mov retval_32, DWORD *destination as _
-                    // TODO: save function pointer offset for future modification
-                    ; mov rcx, QWORD vm_code_return as _
-                    // return destination
-                    ; jmp rcx
+                    ; jmp => jump_target
                     ; skip_jmp:
                 );
             }
@@ -333,12 +329,10 @@ pub fn emit(ops: &[StackOps]) -> ExecutableBuffer {
                 );
             }
             StackOps::Jump(destination) => {
+                let destination = *destination as u32;
+                let jump_target = jump_table[&destination];
                 udon_dynasm!(assembler
-                    ; mov retval_32, DWORD *destination as _
-                    // TODO: save function pointer offset for future modification
-                    ; mov rcx, QWORD vm_code_return as _
-                    // return destination
-                    ; jmp rcx
+                    ; jmp =>jump_target
                 );
             }
             StackOps::JumpIndirect(address) => {
@@ -365,14 +359,6 @@ pub fn emit(ops: &[StackOps]) -> ExecutableBuffer {
                     ; jmp rcx
                 );
             }
-            // _ => {
-            //     panic!("Unknown StackOps");
-            // }
         }
-        // dynasm!(assembler)
     }
-
-    let block = assembler.finalize().unwrap();
-
-    block
 }

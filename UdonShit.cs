@@ -37,7 +37,8 @@ namespace vrc_udon_shit {
 
             logger = LoggerInstance;
             RegisterTypeInIl2CppWithInterfaces<UdonVMDynarec>(true, typeof(IUdonVM));
-            if (Stopwatch.IsHighResolution) {
+            if (Stopwatch.IsHighResolution)
+            {
                 LoggerInstance.Msg("Using High Resolution Stopwatch! :)");
             }
         }

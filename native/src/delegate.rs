@@ -2,8 +2,6 @@ use libc::c_void;
 
 use crate::il2cpp_object::Il2CppObject;
 
-
-
 #[repr(C)]
 pub struct Delegate<T> {
     _obj: Il2CppObject,

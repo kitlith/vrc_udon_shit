@@ -2,13 +2,12 @@
 #![allow(stable_features)]
 #![feature(asm)]
 
+mod delegate;
 mod il2cpp_array;
 mod il2cpp_object;
-mod il2cpp_method;
 mod il2cpp_string;
-mod delegate;
-mod strongbox;
 mod span;
+mod strongbox;
 mod udon_types;
 
 pub mod vm;

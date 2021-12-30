@@ -1,7 +1,6 @@
 using System;
 using System.Reflection;
 using System.Runtime.InteropServices;
-using MelonLoader;
 using VRC.Udon.Common;
 using VRC.Udon.Wrapper;
 using vrc_udon_shit;

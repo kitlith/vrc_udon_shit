@@ -7,7 +7,6 @@ namespace vrc_udon_shit {
         public UdonVMDynarec(IntPtr handle) : base(handle) { }
         public UdonVMDynarec(IUdonWrapper wrapper, VRC.Udon.VM.IUdonVMTimeSource timeSource) : base(ClassInjector.DerivedConstructorPointer<UdonVMDynarec>()) {
             ClassInjector.DerivedConstructorBody(this);
-            // UdonShit.logger.Msg("UdonVMDynarec::.ctor");
             if (!SetWrapperAndTimeSource)
             {
                 NativeInterpreterApi.SetWrapperAndTimeSource(wrapper.Pointer, timeSource.Pointer);
@@ -17,7 +16,6 @@ namespace vrc_udon_shit {
         private static bool SetWrapperAndTimeSource = false;
 
         ~UdonVMDynarec() {
-            // UdonShit.logger.Msg("UdonVMDynarec::.dtor");
             NativeInterpreterApi.Dispose(_interpreter);
         }
 

@@ -2,9 +2,7 @@ use crate::il2cpp_array::Il2CppArray;
 use crate::il2cpp_object::Il2CppObject;
 use crate::il2cpp_string::Il2CppString;
 use crate::span::Span;
-use crate::udon_types::{
-    IUdonWrapper, UdonHeap, UdonVMTimeSource, UdonWrapperCallbackType,
-};
+use crate::udon_types::{IUdonWrapper, UdonHeap, UdonVMTimeSource, UdonWrapperCallbackType};
 
 use super::OpCode;
 
@@ -46,15 +44,12 @@ impl InterpreterState {
             .chunks_exact(4)
             .map(|chunk| u32::from_be_bytes(chunk.try_into().unwrap()))
             .collect();
-        
-        // println!("array.len() {0}", array.len());
-        // println!("bytecode.len() {0}", bytecode.len());
 
         Some(InterpreterState {
             pc: 0,
             stack: Vec::with_capacity(INITIAL_STACK_SIZE),
-            bytecode: bytecode,
-            heap: heap,
+            bytecode,
+            heap,
             extern_cache: FxHashMap::default(),
         })
     }
@@ -105,13 +100,15 @@ impl InterpreterState {
                     unsafe {
                         let signature: &Il2CppString = (*self.heap).get_object(address);
                         // println!("signature {}, {}", signature, signature.len());
-                        let method = (*WRAPPER)
-                            .get_extern_function_delegate(signature);
+                        let method = (*WRAPPER).get_extern_function_delegate(signature);
                         let parameter_count =
                             (*WRAPPER).get_extern_function_parameter_count(signature);
 
                         // println!("parameter_count {0}", parameter_count);
-                        self.extern_cache.insert(address, (method.method_ptr, method.m_target, parameter_count));
+                        self.extern_cache.insert(
+                            address,
+                            (method.method_ptr, method.m_target, parameter_count),
+                        );
                         // self.heap.set_raw(address, self.extern_cache.get(&address)? as *const _ as *const c_void);
                         self.bytecode[self.pc / 4] = OpCode::CachedExtern as u32;
                         self.invoke(method.method_ptr, method.m_target, parameter_count);
@@ -138,17 +135,22 @@ impl InterpreterState {
                     self.invoke(method, target, parameter_count);
                     self.pc += 8;
                 }
-                _ => { 
+                _ => {
                     println!("Unknown opcode: {0}", opcode);
                     return None;
-                },
+                }
             }
         }
 
         Some(())
     }
 
-    fn invoke(&mut self, method: UdonWrapperCallbackType, target: &Il2CppObject, parameter_count: i32) {
+    fn invoke(
+        &mut self,
+        method: UdonWrapperCallbackType,
+        target: &Il2CppObject,
+        parameter_count: i32,
+    ) {
         let start = self.stack.len() - parameter_count as usize;
         let slice = &self.stack[start..];
         let span = Span::new(slice);
@@ -172,7 +174,10 @@ use std::{
 };
 
 #[no_mangle]
-pub extern "C" fn load_program(array: &Il2CppArray<u8>, heap: &'static mut UdonHeap) -> *mut InterpreterState {
+pub extern "C" fn load_program(
+    array: &Il2CppArray<u8>,
+    heap: &'static mut UdonHeap,
+) -> *mut InterpreterState {
     if let Some(interpreter) = InterpreterState::new(array, heap) {
         // println!("good");
         Box::into_raw(Box::new(interpreter))

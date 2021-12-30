@@ -1,35 +1,28 @@
-use dynasmrt::ExecutableBuffer;
+use dynasmrt::{AssemblyOffset, DynasmApi, DynasmLabelApi, ExecutableBuffer};
 use rustc_hash::FxHashMap;
 
+use super::analysis::{analyze_block_stack, ReturnCode, StackOps};
 use super::emit::{emit, Context};
 use super::interpreter::WRAPPER;
-use super::analysis::{analyze_block_stack, ReturnCode, StackOps};
-use crate::udon_types::UdonHeap;
 use crate::il2cpp_array::Il2CppArray;
+use crate::udon_types::UdonHeap;
 
 pub struct Dynarec {
-    heap: &'static mut UdonHeap,
     bytecode: Vec<u32>,
     pub pc: u32,
-    // pushed_variables: Vec<(i32, i32)>,
-    block_cache: FxHashMap<u32, ExecutableBuffer>,
+    buffer: ExecutableBuffer,
+    block_cache: FxHashMap<u32, AssemblyOffset>,
     state: Context,
 }
 
 extern "C" {
     // our generated code doesn't actually touch the struct, it treats it like an opaque pointer.
     #[allow(improper_ctypes)]
-    fn wrap_vm_exception_unknown(
-        code_ptr: *const u8,
-        state: &mut Context,
-    ) -> u64;
+    fn wrap_vm_exception_unknown(code_ptr: *const u8, state: &mut Context) -> u64;
 }
 
 impl Dynarec {
     pub fn new(array: &Il2CppArray<u8>, heap: &'static mut UdonHeap) -> Option<Self> {
-        // let heap_size = heap.size();
-        // let mut pushed_variables = vec![(0u32, u32::MAX); heap_size];
-
         let bytes = array.as_slice();
         let bytecode: Vec<u32> = bytes
             .chunks_exact(4)
@@ -37,11 +30,12 @@ impl Dynarec {
             .collect();
 
         let mut jump_targets = Vec::<u32>::new();
-        let mut block_cache = FxHashMap::default();
+        let mut block_ops = FxHashMap::default();
 
         let mut pc = 0usize;
         while pc / 4 < bytecode.len() {
-            let start_pc = pc;
+            let start_pc = pc as u32;
+
             let stack_ops = analyze_block_stack(&bytecode, heap, &mut pc, unsafe { WRAPPER });
 
             match stack_ops.last() {
@@ -53,42 +47,63 @@ impl Dynarec {
                 _ => {}
             }
 
-            for op in stack_ops.iter() {
-                match op {
-                    StackOps::Jump(destination) => Some(*destination as u32),
-                    StackOps::JumpIfFalse { destination, .. } => Some(*destination),
-                    _ => None,
-                }.map(|dest| if !block_cache.contains_key(&dest) { jump_targets.push(dest); });
-            }
-
-            block_cache.insert(start_pc as u32, emit(&stack_ops));
+            block_ops.insert(start_pc, stack_ops);
+            jump_targets.push(start_pc);
         }
 
         while let Some(destination) = jump_targets.pop() {
-            if block_cache.contains_key(&destination) {
-                continue;
-            }
-
-            let mut pc = destination as usize;
-            let stack_ops = analyze_block_stack(&bytecode, heap, &mut pc, unsafe { WRAPPER });
-            for op in stack_ops.iter() {
-                match op {
+            let targets: Vec<(u32, Vec<StackOps>)> = block_ops[&destination]
+                .iter()
+                .map(|op| match op {
                     StackOps::Jump(destination) => Some(*destination as u32),
                     StackOps::JumpIfFalse { destination, .. } => Some(*destination),
                     _ => None,
-                }.map(|dest| if !block_cache.contains_key(&dest) { jump_targets.push(dest); });
-            }
+                })
+                .filter(|destination| destination.is_some())
+                .map(|destination| destination.unwrap())
+                .filter(|destination| !block_ops.contains_key(destination))
+                .map(|destination| {
+                    let mut pc = destination as usize;
+                    let stack_ops =
+                        analyze_block_stack(&bytecode, heap, &mut pc as &mut usize, unsafe {
+                            WRAPPER
+                        });
+                    (destination, stack_ops)
+                })
+                .collect();
 
-            block_cache.insert(destination as u32, emit(&stack_ops));
+            for (destination, stack_ops) in targets {
+                block_ops.insert(destination, stack_ops);
+                jump_targets.push(destination);
+            }
+        }
+
+        let mut assembler = dynasmrt::x64::Assembler::new().ok()?;
+        let labels = FxHashMap::from(
+            block_ops
+                .keys()
+                .map(|&target| {
+                    let label = assembler.new_dynamic_label();
+                    (target, label)
+                })
+                .collect(),
+        );
+
+        let mut block_cache = FxHashMap::default();
+
+        for (pc, ops) in block_ops {
+            let label = labels.get(&pc).unwrap();
+            assembler.dynamic_label(*label);
+            block_cache.insert(pc, assembler.offset());
+            emit(&mut assembler, &ops, &labels);
         }
 
         let state = Context::new(heap as *mut UdonHeap);
 
         Some(Dynarec {
-            heap,
             bytecode,
             pc: 0,
-            // pushed_variables,
+            buffer: assembler.finalize().unwrap(),
             block_cache,
             state: state,
         })
@@ -96,19 +111,12 @@ impl Dynarec {
 
     pub fn interpret(&mut self) -> bool {
         loop {
-            let block = self.block_cache.entry(self.pc)
-                .or_insert_with(|| {
-                    let mut end_pc = self.pc as usize;
-                    let stack_ops = analyze_block_stack(&self.bytecode, self.heap, &mut end_pc, unsafe { WRAPPER });
-                    let block = emit(&stack_ops);
-                    block
-                });
-            
-            let rc = ReturnCode::decode(unsafe { wrap_vm_exception_unknown(
-                block.as_ptr(),
-                &mut self.state
-            ) });
-            
+            let offset = self.block_cache[&self.pc];
+
+            let rc = ReturnCode::decode(unsafe {
+                wrap_vm_exception_unknown(self.buffer.ptr(offset), &mut self.state)
+            });
+
             match rc {
                 ReturnCode::Continue(pc) => {
                     self.pc = pc;
@@ -122,9 +130,10 @@ impl Dynarec {
                     // self.pc = pc; // we don't actually emit the correct pc at the moment! but it doesn't matter, either.
 
                     println!("dumping blocks");
-                    for (pc, block) in self.block_cache.iter() {
-                        std::fs::write(format!("block_{:x}.bin", pc), block.as_ref()).unwrap();
-                    }
+                    // for (pc, block) in self.block_cache.iter() {
+                    //     std::fs::write(format!("block_{:x}.bin", pc), block.as_ref()).unwrap();
+                    // }
+                    std::fs::write(format!("block_{:x}.bin", pc), self.buffer.as_ref()).unwrap();
                     unimplemented!();
                 }
                 ReturnCode::MissingArgument => return false,
