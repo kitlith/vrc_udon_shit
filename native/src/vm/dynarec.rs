@@ -2,7 +2,7 @@ use dynasmrt::{AssemblyOffset, DynasmApi, DynasmLabelApi, ExecutableBuffer};
 use rustc_hash::FxHashMap;
 
 use super::analysis::{analyze_block_stack, ReturnCode, StackOps};
-use super::emit::{emit, Context};
+use super::emit::{emit_abort, emit_block, Context};
 use super::interpreter::WRAPPER;
 use crate::il2cpp_array::Il2CppArray;
 use crate::udon_types::UdonHeap;
@@ -79,6 +79,8 @@ impl Dynarec {
         }
 
         let mut assembler = dynasmrt::x64::Assembler::new().ok()?;
+        emit_abort(&mut assembler);
+
         let labels = FxHashMap::from(
             block_ops
                 .keys()
@@ -95,7 +97,7 @@ impl Dynarec {
             let label = labels.get(&pc).unwrap();
             assembler.dynamic_label(*label);
             block_cache.insert(pc, assembler.offset());
-            emit(&mut assembler, &ops, &labels);
+            emit_block(&mut assembler, &ops, &labels);
         }
 
         let state = Context::new(heap as *mut UdonHeap);

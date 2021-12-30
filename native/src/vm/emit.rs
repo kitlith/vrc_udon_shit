@@ -68,12 +68,6 @@ impl Context {
         }
         self.stack.as_mut_ptr()
     }
-    pub fn set_stack_count(&mut self, val: u64) {
-        self.stack_count = val;
-    }
-    pub fn get_stack_count(&self) -> u64 {
-        self.stack_count
-    }
 }
 
 // NOTE: This has undefined behaviour! C++ exceptions are not supposed to unwind through rust functions.
@@ -130,7 +124,17 @@ pub extern "C" fn call_vm_code(code_ptr: *const core::ffi::c_void, context: &mut
     ret
 }
 
-pub fn emit(
+pub fn emit_abort(assembler: &mut dynasmrt::x64::Assembler) {
+    udon_dynasm!(assembler
+        ; -> abort:
+        ; mov retval, QWORD ReturnCode::RequestInterpreter(0).encode() as _
+        ; mov rcx, QWORD vm_code_return as _
+        // return RequestInterpreter
+        ; jmp rcx
+    );
+}
+
+pub fn emit_block(
     assembler: &mut dynasmrt::x64::Assembler,
     ops: &[StackOps],
     jump_table: &FxHashMap<u32, DynamicLabel>,
@@ -141,9 +145,6 @@ pub fn emit(
                 ; mov DWORD [stack_base + stack_count * 0x4 + (offset * 4) as i32], DWORD value as _
             );
         }
-        udon_dynasm!(assembler
-            ; add stack_count, params.len() as _
-        );
     }
 
     let mut min_stack: isize = 0;
@@ -187,16 +188,10 @@ pub fn emit(
     if min_stack < 0 {
         udon_dynasm!(assembler
             ; cmp stack_count, (-min_stack) as u32 as _
-            ; jge >skip_jmp
             // if count < minimal stack removal
             // this is not a happy path, we don't care about speed here, VM is about to halt.
             // TODO: embed block PC? or should we just have trampoline infer from which block just returned?
-            ; mov retval, QWORD ReturnCode::RequestInterpreter(0).encode() as _
-            ; mov rcx, QWORD vm_code_return as _
-            // return RequestInterpreter
-            ; jmp rcx
-            // else continue
-            ; skip_jmp:
+            ; jl ->abort
         );
     }
 
@@ -222,6 +217,9 @@ pub fn emit(
         match op {
             StackOps::Push(params) => {
                 push_n(assembler, &params);
+                udon_dynasm!(assembler
+                    ; add stack_count, params.len() as _
+                );
             }
             StackOps::Pop(count) => {
                 udon_dynasm!(assembler
@@ -242,18 +240,16 @@ pub fn emit(
                     }
                     ExternArgs::Incomplete(count) => {
                         /* Arguments are already pushed to the stack */
+                        udon_dynasm!(assembler
+                            ; sub stack_count, *count as _
+                        );
                         *count
                     }
                 };
                 let addr = *target as *const Il2CppObject;
                 udon_dynasm!(assembler
-                    ; sub stack_count, count as _
-
-                    // TODO: is this necessary? potential workaround for some stack underflow bug.
-                    ; mov arg1, context
-                    ; mov arg2, stack_count
-                    ; mov rax, QWORD Context::set_stack_count as _
-                    ; call rax
+                    // context.stack_count = stack_count
+                    ; mov context => Context.stack_count, stack_count
 
                     ; lea arg3, [stack_base + stack_count * 4]
                     /* Construct Span<u32> pointing to stack */
@@ -269,12 +265,8 @@ pub fn emit(
                     ; mov rax, QWORD *callback as _
                     ; call rax
 
-                    // TODO: is this necessary? potential workaround for some stack underflow bug.
-                    ; mov arg1, context
-                    ; mov rax, QWORD Context::get_stack_count as _
-                    ; call rax
-
-                    ; mov stack_count, retval
+                    // stack_count = context.stack_count
+                    ; mov stack_count, context => Context.stack_count
 
                     ; mov arg1, context
                     ; xor arg2, arg2 // arg2 = 0
@@ -302,9 +294,7 @@ pub fn emit(
                     ; call rax
 
                     ; test retval_8, retval_8 // set ZF
-                    ; jnz >skip_jmp
-                    ; jmp => jump_target
-                    ; skip_jmp:
+                    ; jz => jump_target
                 );
             }
             StackOps::CopyComplete { src, dst } => {

@@ -1,7 +1,7 @@
-use dynasmrt::DynasmLabelApi;
 use dynasmrt::x64::Assembler;
+use dynasmrt::DynasmLabelApi;
 use native::vm::analysis::{ExternArgs, ReturnCode, StackOps};
-use native::vm::emit::emit;
+use native::vm::emit::{emit_abort, emit_block};
 use rustc_hash::FxHashMap;
 
 fn main() {
@@ -34,21 +34,23 @@ fn main() {
     ];
 
     let mut assembler = Assembler::new().unwrap();
+    emit_abort(&mut assembler);
+
     let mut labels = FxHashMap::default();
     labels.insert(0xDEAD0001, assembler.new_dynamic_label());
     labels.insert(0xDEAD0002, assembler.new_dynamic_label());
     labels.insert(0xDEAD0003, assembler.new_dynamic_label());
 
     assembler.dynamic_label(labels[&0xDEAD0001]);
-    emit(&mut assembler, &ops, &labels);
+    emit_block(&mut assembler, &ops, &labels);
 
     assembler.dynamic_label(labels[&0xDEAD0002]);
     *ops.last_mut().unwrap() = StackOps::Return(ReturnCode::RequestInterpreter(0xDEAD0004));
-    emit(&mut assembler, &ops, &labels);
+    emit_block(&mut assembler, &ops, &labels);
 
     assembler.dynamic_label(labels[&0xDEAD0003]);
     *ops.last_mut().unwrap() = StackOps::JumpIndirect(0xBEEF);
-    emit(&mut assembler, &ops, &labels);
+    emit_block(&mut assembler, &ops, &labels);
 
     let result = assembler.finalize().unwrap();
 
