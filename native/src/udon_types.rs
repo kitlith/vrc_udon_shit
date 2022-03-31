@@ -7,16 +7,17 @@ use crate::strongbox::IStrongBox;
 
 use libc::c_void;
 
-// pub struct UdonProgram {
-//     _obj: Il2CppObject,
-//     pub instruction_set_identifier: *const Il2CppString,
-//     pub byte_code: *const Il2CppArray<u8>,
-//     pub heap: *mut UdonHeap,
-//     pub entry_points: *const c_void,
-//     pub symbol_table: *const c_void,
-//     pub sync_metadata_table: *const c_void,
-//     pub update_order: *const i32,
-// }
+#[repr(C)]
+pub struct UdonProgram {
+    _obj: Il2CppObject,
+    pub instruction_set_identifier: *const Il2CppString,
+    pub instruction_set_version: i32,
+    pub byte_code: *const Il2CppArray<u8>,
+    pub heap: *mut UdonHeap,
+    pub entry_points: *const c_void,
+    pub symbol_table: *const c_void,
+    pub sync_metadata_table: *const c_void,
+}
 
 #[repr(C)]
 pub struct UdonHeap {

@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using UnhollowerRuntimeLib;
 using VRC.Udon.Common.Interfaces;
 
@@ -28,8 +29,14 @@ namespace vrc_udon_shit {
                 return false;
             }
 
+            var timer = new Stopwatch();
+            timer.Start();
+
             _program = program;
             _interpreter = NativeInterpreterApi.LoadProgram(program.ByteCode.Pointer, program.Heap.Pointer);
+
+            var elapsed = timer.ElapsedMilliseconds;
+            UdonShit.logger.Msg("Loaded program in " + elapsed + "ms");
 
             return _interpreter != IntPtr.Zero;
         }

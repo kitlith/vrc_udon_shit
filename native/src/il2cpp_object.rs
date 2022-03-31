@@ -1,9 +1,11 @@
 use libc::c_void;
 use std::mem;
 
+use crate::il2cpp_class::Il2CppClass;
+
 #[repr(C)]
 pub struct Il2CppObject {
-    klass: *const c_void,
+    pub klass: *const Il2CppClass,
     monitor: *const c_void,
 }
 
@@ -20,7 +22,7 @@ impl Il2CppObject {
 impl Default for Il2CppObject {
     fn default() -> Self {
         Self {
-            klass: 0 as *const c_void,
+            klass: 0 as *const Il2CppClass,
             monitor: 0 as *const c_void,
         }
     }

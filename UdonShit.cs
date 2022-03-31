@@ -2,8 +2,17 @@
 using System.IO;
 using System.Reflection;
 using HarmonyLib;
+using Il2CppSystem.Collections.Generic;
 using MelonLoader;
+using VRC.Udon.ClientBindings;
+using VRC.Udon.Common;
 using VRC.Udon.Common.Interfaces;
+using VRC.Udon.ProgramSources;
+using VRC.Udon.Security;
+using VRC.Udon.Security.Interfaces;
+using VRC.Udon.Serialization.OdinSerializer;
+using VRC.Udon.VM;
+using VRC.Udon.Wrapper;
 using static UnhollowerRuntimeLib.ClassInjector;
 
 [assembly: MelonInfo(typeof(vrc_udon_shit.UdonShit), "Udon Shit", "0.0.1", "Kitlith & Behemoth")]
@@ -42,6 +51,62 @@ namespace vrc_udon_shit {
             {
                 LoggerInstance.Msg("Using High Resolution Stopwatch! :)");
             }
+
+            logger.Msg("Initialized native library");
+
+            var blacklist = new UnityEngineObjectSecurityBlacklist();
+
+            logger.Msg("a");
+
+            var wrapperFactory = new UdonDefaultWrapperFactory(blacklist.Cast<IUdonSecurityBlacklist<UnityEngine.Object>>());
+
+            logger.Msg("Created WrapperFactory");
+
+            var wrapper = wrapperFactory.GetWrapper();
+
+            logger.Msg("c");
+
+            var timeSource = new UdonVMTimeSource();
+
+            logger.Msg("d");
+
+            var dynarec = new UdonVMDynarec(wrapper, timeSource.Cast<IUdonVMTimeSource>());
+
+            logger.Msg("constructed dynarec");
+
+            var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream("vrc_udon_shit.recursive_test.txt");
+            var contents = new StreamReader(stream).ReadToEnd();
+
+            logger.Msg("Loaded serialized program");
+
+            var serializedProgramAsset = new SerializedUdonProgramAsset
+            {
+                serializedProgramBytesString = contents,
+                serializationDataFormat = DataFormat.Binary,
+                programUnityEngineObjects = new List<UnityEngine.Object>(),
+                name = "recursive_test"
+            };
+
+            logger.Msg("Constructed");
+
+            var program = serializedProgramAsset.RetrieveProgram();
+            foreach (var entryPoint in program.EntryPoints.GetSymbols()) {
+                logger.Msg("Entry point: " + entryPoint + " " + program.EntryPoints.GetAddressFromSymbol(entryPoint));
+            }
+            foreach (var symbol in program.SymbolTable.GetSymbols()) {
+                logger.Msg("Symbol: " + symbol + " " + program.SymbolTable.GetAddressFromSymbol(symbol));
+            }
+            var entry = program.EntryPoints.GetAddressFromSymbol("ExecuteTests");
+
+            logger.Msg("Deserialized!");
+
+            dynarec.LoadProgram(program);
+            dynarec.SetProgramCounter(entry);
+            dynarec.Interpret();
+
+            logger.Msg("Done!");
+
+            Process.GetCurrentProcess().Kill();
         }
 
         public override void OnSceneWasUnloaded(int buildIndex, string sceneName) {

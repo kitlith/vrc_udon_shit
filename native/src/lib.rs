@@ -3,11 +3,13 @@
 #![feature(asm)]
 
 mod delegate;
-mod il2cpp_array;
-mod il2cpp_object;
-mod il2cpp_string;
+pub mod method_info;
+pub mod il2cpp_array;
+pub mod il2cpp_object;
+pub mod il2cpp_string;
+pub mod il2cpp_class;
 mod span;
 mod strongbox;
-mod udon_types;
+pub mod udon_types;
 
 pub mod vm;

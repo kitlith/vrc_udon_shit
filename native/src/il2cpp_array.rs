@@ -4,10 +4,10 @@ use std::{ops, slice};
 
 #[repr(C)]
 pub struct Il2CppArray<T> {
-    _obj: Il2CppObject,
+    pub obj: Il2CppObject,
     bounds: *const Il2CppArrayBounds,
     max_length: Il2cppArraySizeType,
-    values: T,
+    pub values: T,
 }
 
 type Il2cppArraySizeType = usize;

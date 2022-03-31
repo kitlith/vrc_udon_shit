@@ -24,8 +24,8 @@ static mut TIME_SOURCE: *const UdonVMTimeSource = 0 as *const UdonVMTimeSource;
 
 #[no_mangle]
 pub extern "C" fn set_wrapper_and_time_source(
-    wrapper: &IUdonWrapper,
-    time_source: &UdonVMTimeSource,
+    wrapper: *const IUdonWrapper,
+    time_source: *const UdonVMTimeSource,
 ) {
     unsafe {
         WRAPPER = wrapper as *const IUdonWrapper;

@@ -1,7 +1,7 @@
 pub mod analysis;
 pub mod dynarec;
 pub mod emit;
-mod interpreter;
+pub mod interpreter;
 
 use num_derive::FromPrimitive;
 

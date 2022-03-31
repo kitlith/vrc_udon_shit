@@ -23,6 +23,10 @@
 
     <AssemblySearchPaths>$(AssemblySearchPaths);$(VRChatPath)\MelonLoader\Managed</AssemblySearchPaths>
   </PropertyGroup>
+  
+  <ItemGroup>
+    <EmbeddedResource Include="recursive_test.txt" />
+  </ItemGroup>
 
   <Target Name="Cargo build native library" BeforeTargets="PrepareForBuild">
       <Error Condition=" '$(VRChatPath)' == '' " Text="The VRChatPath property is not set! Please set it! OS = $(OS)"/>
@@ -52,7 +56,13 @@
     <Reference Include="VRC.Udon.Common">
       <Private>False</Private>
     </Reference>
+    <Reference Include="VRC.Udon.Serialization.OdinSerializer">
+      <Private>False</Private>
+    </Reference>
     <Reference Include="VRC.Udon.VM">
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="VRC.Udon.Security">
       <Private>False</Private>
     </Reference>
     <Reference Include="VRC.Udon.Wrapper.dll">
@@ -68,6 +78,9 @@
       <Private>False</Private>
     </Reference>
     <Reference Include="Il2CppSystem.Core">
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Il2CppSystem.Collections.Immutable">
       <Private>False</Private>
     </Reference>
     <Reference Include="UnhollowerBaseLib">
