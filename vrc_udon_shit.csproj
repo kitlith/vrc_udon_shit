@@ -46,6 +46,11 @@
       <Private>False</Private>
     </Reference>
 
+    <Reference Include="0Harmony">
+      <HintPath>$(VRChatPath)/MelonLoader/0Harmony.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+
     <Reference Include="Assembly-CSharp">
       <Private>False</Private>
     </Reference>
