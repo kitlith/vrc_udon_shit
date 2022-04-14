@@ -253,9 +253,9 @@ pub fn emit_block(
 
                     ; lea arg3, [stack_base + stack_count * 4]
                     /* Construct Span<u32> pointing to stack */
-                    ; mov QWORD [span_ptr + 0x00], 0
-                    ; mov QWORD [span_ptr + 0x08], arg3
-                    ; mov DWORD [span_ptr + 0x10], count as _
+                    ; mov QWORD span_ptr => Span::<u32>.pinnable, 0
+                    ; mov QWORD span_ptr => Span::<u32>.byte_offset, arg3
+                    ; mov DWORD span_ptr => Span::<u32>.length, count as _
 
                     ; mov arg1, QWORD addr as _
                     ; mov arg2, heap_ptr
