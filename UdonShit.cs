@@ -1,6 +1,7 @@
 ﻿using System.Diagnostics;
 using System.IO;
 using System.Reflection;
+using System.Linq;
 using HarmonyLib;
 using MelonLoader;
 using VRC.Udon.Common.Interfaces;
@@ -16,6 +17,8 @@ namespace vrc_udon_shit {
 
         public override void OnApplicationStart() {
             logger = LoggerInstance;
+
+            UdonModules.TestFn();
 
             var dllName = "native.dll";
             var dstPath = "VRChat_Data/Plugins/" + dllName;

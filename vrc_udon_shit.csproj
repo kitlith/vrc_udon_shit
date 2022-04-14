@@ -25,12 +25,12 @@
   </PropertyGroup>
 
   <Target Name="Cargo build native library" BeforeTargets="PrepareForBuild">
-      <Error Condition=" '$(VRChatPath)' == '' " Text="The VRChatPath property is not set! Please set it! OS = $(OS)"/>
-      <Exec Command="cargo build --release --manifest-path native/Cargo.toml $(CargoFlags)"/>
+      <Error Condition=" '$(VRChatPath)' == '' " Text="The VRChatPath property is not set! Please set it! OS = $(OS)" />
+      <Exec Command="cargo build --release --manifest-path native/Cargo.toml $(CargoFlags)" />
   </Target>
 
   <Target Name="Cargo clean" AfterTargets="Clean">
-      <Exec Command="cargo clean --manifest-path native/Cargo.toml"/>
+      <Exec Command="cargo clean --manifest-path native/Cargo.toml" />
   </Target>
 
   <ItemGroup>
@@ -60,7 +60,10 @@
     <Reference Include="VRC.Udon.VM">
       <Private>False</Private>
     </Reference>
-    <Reference Include="VRC.Udon.Wrapper.dll">
+    <Reference Include="VRC.Udon.Wrapper">
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="VRC.Udon.VRCWrapperModules">
       <Private>False</Private>
     </Reference>
     <Reference Include="VRC.Udon">
@@ -93,6 +96,16 @@
     <Reference Include="Newtonsoft.Json">
       <Private>False</Private>
     </Reference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- <PackageReference Include="Costura.Fody" Version="5.7.0">
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="Fody" Version="6.6.0">
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference> -->
+    <PackageReference Include="OneOf" Version="3.0.205" />
   </ItemGroup>
 
   <Target Name="CopyMod" AfterTargets="Build">
